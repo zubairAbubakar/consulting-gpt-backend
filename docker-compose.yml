@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      target: development
+    container_name: consulting-gpt-backend
+    volumes:
+      - .:/app
+    ports:
+      - '8000:8000'
+    environment:
+      - POSTGRES_SERVER=db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=consulting_gpt
+    depends_on:
+      - db
+    networks:
+      - consulting-gpt-network
+
+  db:
+    image: postgres:15
+    container_name: consulting-gpt-db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=consulting_gpt
+    ports:
+      - '5432:5432'
+    networks:
+      - consulting-gpt-network
+
+volumes:
+  postgres_data:
+
+networks:
+  consulting-gpt-network:
+    name: consulting-gpt-network
