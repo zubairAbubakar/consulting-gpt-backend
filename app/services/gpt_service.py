@@ -397,3 +397,94 @@ class GPTService:
         except Exception as e:
             logger.error(f"Error calculating similarity: {e}")
             return 0.0
+
+    async def get_search_term_score(self, word: str) -> float:
+        """
+        Score a word/phrase on how specific it is (0-1 scale).
+        
+        Args:
+            word: Word or phrase to score
+            
+        Returns:
+            Score between 0 and 1, where 0 is very generic and 1 is very specific
+        """
+        system_prompt = ("Score this word/phrase on a scale of 0 to 1 on how specific they would be. "
+                        "0 is very generic. 1 is very specific. "
+                        "Words like \"data\", \"machines\" and \"technology\" are generic while words like "
+                        "\"PH level\", \"nanomachines\" and \"aircraft\" are more specific. "
+                        "Do not include quotations, brackets, or explanations. Only return a number between 0 and 1.")
+        
+        result = await self._create_chat_completion(
+            system_prompt=system_prompt,
+            user_prompt=word,
+            temperature=0.0
+        )
+        try:
+            return float(result) if result else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    async def get_search_keywords(
+        self, 
+        problem_statement: str,
+        keyword_count: int = 2
+    ) -> str:
+        """
+        Generate search keywords based on a problem statement.
+        
+        Args:
+            problem_statement: The problem statement to generate keywords for
+            keyword_count: Number of keywords to generate
+            
+        Returns:
+            Space-separated string of keywords optimized for search
+        """
+        # Get problem statement embedding
+        prob_embedding = await self.get_embedding(problem_statement)
+        
+        # Generate initial keywords
+        system_prompt = (f"Based on this problem statement in user prompt, come up with {keyword_count} "
+                      "single word search terms to find potential competing patented technologies. "
+                      "Output as csv list. Each element should be one word. Do not include quotations.")
+        
+        keyterms = await self._create_chat_completion(
+            system_prompt=system_prompt,
+            user_prompt=problem_statement,
+            temperature=0.9
+        )
+        
+        if not keyterms:
+            return ""
+            
+        keywords = [k.strip() for k in keyterms.split(",")]
+        
+        # Get embeddings and scores for each keyword
+        keyword_data = []
+        for word in keywords:
+            # Get embedding and calculate similarity
+            similarity = await self.calculate_similarity(problem_statement, word)
+            
+            # Get specificity score
+            specificity = await self.get_search_term_score(word)
+            
+            # Calculate search goodness score
+            search_goodness = specificity * similarity
+            
+            keyword_data.append({
+                "word": word,
+                "search_goodness": search_goodness
+            })
+        
+        # Sort by search goodness
+        keyword_data.sort(key=lambda x: x["search_goodness"], reverse=True)
+        
+        # Calculate average goodness
+        avg_goodness = sum(k["search_goodness"] for k in keyword_data) / len(keyword_data)
+        
+        # Build final search term from keywords above 50% of average goodness
+        search_terms = []
+        for kw in keyword_data:
+            if kw["search_goodness"] > 0.5 * avg_goodness:
+                search_terms.append(kw["word"])
+                
+        return " ".join(search_terms)
