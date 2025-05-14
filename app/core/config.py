@@ -1,5 +1,6 @@
 from typing import List
 from pydantic_settings import BaseSettings
+from functools import lru_cache
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Consulting GPT"
@@ -14,11 +15,11 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "consulting_gpt"
-    DATABASE_URL: str
+    DATABASE_URL: str = "postgresql://postgres:postgres@db/consulting_gpt"
     
     # External APIs
-    OPENAI_API_KEY: str
-    SERPAPI_API_KEY: str
+    OPENAI_API_KEY: str = "test-key"  # Default for testing
+    SERPAPI_API_KEY: str = "test-key"  # Default for testing
     
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000"]  # Frontend URL
@@ -31,4 +32,8 @@ class Settings(BaseSettings):
     def SQLALCHEMY_DATABASE_URI(self) -> str:
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}/{self.POSTGRES_DB}"
 
-settings = Settings()
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
+
+settings = get_settings()

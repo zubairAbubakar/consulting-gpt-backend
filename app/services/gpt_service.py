@@ -9,7 +9,7 @@ import time
 from openai import OpenAI, RateLimitError
 from app.core.config import settings
 from sqlalchemy.orm import Session
-from app.models.technology import Technology, ComparisonAxis
+from app.models.technology import Technology, ComparisonAxis, PatentSearch, PatentResult
 from app.services.patent_service import PatentService
 
 # Configure logging
