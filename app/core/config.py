@@ -1,5 +1,6 @@
 from typing import List
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from functools import lru_cache
 
 class Settings(BaseSettings):
@@ -24,9 +25,7 @@ class Settings(BaseSettings):
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000"]  # Frontend URL
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = ConfigDict(env_file=".env", case_sensitive=True)
 
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:

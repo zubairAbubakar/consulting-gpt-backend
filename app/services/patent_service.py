@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict
 from serpapi import GoogleSearch
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, UTC
 from app.core.config import settings
 from app.models.technology import PatentSearch, PatentResult, Technology
 import logging
@@ -34,7 +34,7 @@ class PatentService:
             patent_search = PatentSearch(
                 technology_id=technology_id,
                 search_query=search_query,
-                search_date=datetime.utcnow()
+                search_date=datetime.now(UTC)
             )
             self.db.add(patent_search)
             self.db.commit()
