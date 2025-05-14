@@ -261,12 +261,13 @@ class GPTService:
 
         return comp_axes, problem_statement
 
-    def create_technology(self, name: str, abstract: str, problem_statement: str) -> Technology:
+    def create_technology(self, name: str, abstract: str, problem_statement: str, search_keywords: str = None) -> Technology:
         """Create a new technology entry in the database"""
         technology = Technology(
             name=name,
             abstract=abstract,
-            problem_statement=problem_statement
+            problem_statement=problem_statement,
+            search_keywords=search_keywords
         )
         self.db.add(technology)
         self.db.commit()
@@ -336,11 +337,15 @@ class GPTService:
         if comp_axes_df.empty:
             return None, []
 
+        # Generate search keywords
+        search_keywords = await self.get_search_keywords(problem_statement)
+
         # Create technology record
         technology = self.create_technology(
             name=technology_name,
             abstract=technology_description,
-            problem_statement=problem_statement
+            problem_statement=problem_statement,
+            search_keywords=search_keywords
         )
 
         # Convert DataFrame to format expected by create_comparison_axes
@@ -441,7 +446,9 @@ class GPTService:
         """
         # Get problem statement embedding
         prob_embedding = await self.get_embedding(problem_statement)
-        
+        if not prob_embedding:
+            return ""
+            
         # Generate initial keywords
         system_prompt = (f"Based on this problem statement in user prompt, come up with {keyword_count} "
                       "single word search terms to find potential competing patented technologies. "
@@ -461,13 +468,18 @@ class GPTService:
         # Get embeddings and scores for each keyword
         keyword_data = []
         for word in keywords:
-            # Get embedding and calculate similarity
+            # Get embedding and calculate similarity with problem statement
+            keyword_embedding = await self.get_embedding(word)
+            if not keyword_embedding:
+                continue
+                
+            # Calculate cosine similarity with problem statement
             similarity = await self.calculate_similarity(problem_statement, word)
             
             # Get specificity score
             specificity = await self.get_search_term_score(word)
             
-            # Calculate search goodness score
+            # Calculate search goodness score - combining both similarity and specificity
             search_goodness = specificity * similarity
             
             keyword_data.append({
@@ -475,6 +487,9 @@ class GPTService:
                 "search_goodness": search_goodness
             })
         
+        if not keyword_data:
+            return ""
+            
         # Sort by search goodness
         keyword_data.sort(key=lambda x: x["search_goodness"], reverse=True)
         
