@@ -1,19 +1,26 @@
-from datetime import datetime
 from typing import Any
-from sqlalchemy.ext.declarative import declarative_base, declared_attr
-from sqlalchemy import Column, DateTime
+from datetime import datetime
+from sqlalchemy.ext.declarative import declared_attr
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import DateTime, Integer
 
-class BaseModel:
-    id: Any
-    __name__: str
-
-    # Generate tablename automatically
+class BaseModel(DeclarativeBase):
+    """Base class for all SQLAlchemy models"""
+    
     @declared_attr
     def __tablename__(cls) -> str:
         return cls.__name__.lower()
-    
-    # Common columns for all models
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-Base = declarative_base(cls=BaseModel)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    
+    def dict(self) -> dict[str, Any]:
+        """Convert model instance to dictionary"""
+        return {
+            column.name: getattr(self, column.name)
+            for column in self.__table__.columns
+        }
+
+# Export BaseModel as Base for backward compatibility
+Base = BaseModel

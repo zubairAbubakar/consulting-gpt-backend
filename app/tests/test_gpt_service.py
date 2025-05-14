@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 from openai import OpenAI, OpenAIError
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from app.services.gpt_service import GPTService, RateLimiter
-from app.models.technology import Technology, ComparisonAxis
+from app.models.technology import Technology, ComparisonAxis, PatentSearch, PatentResult
 
 @pytest.fixture
 def db():
@@ -19,10 +19,18 @@ def db():
     return mock_db
 
 @pytest.fixture
-def gpt_service(db):
-    """GPT service with mocked OpenAI client"""
+def mock_patent_service():
+    """Mock PatentService"""
+    mock = Mock()
+    mock.search_patents = AsyncMock()
+    return mock
+
+@pytest.fixture
+def gpt_service(db, mock_patent_service):
+    """GPT service with mocked dependencies"""
     service = GPTService(db)
     service.client = AsyncMock()
+    service.patent_service = mock_patent_service
     return service
 
 @pytest.fixture
@@ -362,3 +370,70 @@ async def test_get_search_keywords(gpt_service, mock_chat_completion):
     mock_chat_completion.choices[0].message.content = ""
     keywords = await gpt_service.get_search_keywords("test", keyword_count=2)
     assert keywords == ""
+
+@pytest.mark.asyncio
+async def test_search_related_patents_success(gpt_service, db):
+    # Create mock technology
+    mock_tech = Technology(
+        id=1,
+        name="Test Tech",
+        abstract="Test abstract",
+        problem_statement="Test problem",
+        search_keywords="test keyword"
+    )
+    
+    # Configure mock db to return our mock technology
+    db.query.return_value.filter.return_value.first.return_value = mock_tech
+    
+    # Mock PatentService.search_patents
+    mock_search = PatentSearch(id=1, technology_id=1, search_query="test keyword")
+    gpt_service.patent_service.search_patents = AsyncMock(return_value=mock_search)
+    
+    # Test the method
+    result = await gpt_service.search_related_patents(1)
+    
+    assert result is not None
+    assert isinstance(result, PatentSearch)
+    assert result.technology_id == 1
+    assert result.search_query == "test keyword"
+    
+    # Verify PatentService was called correctly
+    gpt_service.patent_service.search_patents.assert_called_once_with(
+        technology_id=1,
+        search_query="test keyword"
+    )
+
+@pytest.mark.asyncio
+async def test_search_related_patents_no_technology(gpt_service, db):
+    # Configure mock db to return None
+    db.query.return_value.filter.return_value.first.return_value = None
+    
+    # Test the method
+    result = await gpt_service.search_related_patents(1)
+    
+    assert result is None
+    
+    # Verify PatentService was not called
+    gpt_service.patent_service.search_patents.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_search_related_patents_no_keywords(gpt_service, db):
+    # Create mock technology without keywords
+    mock_tech = Technology(
+        id=1,
+        name="Test Tech",
+        abstract="Test abstract",
+        problem_statement="Test problem",
+        search_keywords=None
+    )
+    
+    # Configure mock db to return our mock technology
+    db.query.return_value.filter.return_value.first.return_value = mock_tech
+    
+    # Test the method
+    result = await gpt_service.search_related_patents(1)
+    
+    assert result is None
+    
+    # Verify PatentService was not called
+    gpt_service.patent_service.search_patents.assert_not_called()
