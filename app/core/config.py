@@ -14,10 +14,11 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "consulting_gpt"
+    DATABASE_URL: str
     
     # External APIs
-    OPENAI_API_KEY: str = None
-    SERPAPI_API_KEY: str = None
+    OPENAI_API_KEY: str
+    SERPAPI_API_KEY: str
     
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000"]  # Frontend URL

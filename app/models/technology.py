@@ -16,6 +16,7 @@ class Technology(Base):
     comparison_axes = relationship("ComparisonAxis", back_populates="technology")
     related_technologies = relationship("RelatedTechnology", back_populates="technology")
     analysis_results = relationship("AnalysisResult", back_populates="technology")
+    patent_searches = relationship("PatentSearch", back_populates="technology")
 
 class ComparisonAxis(Base):
     __tablename__ = "comparison_axis"
@@ -62,3 +63,29 @@ class AnalysisResult(Base):
     technology = relationship("Technology", back_populates="analysis_results")
     related_technology = relationship("RelatedTechnology", back_populates="analysis_results")
     axis = relationship("ComparisonAxis", back_populates="analysis_results")
+
+class PatentSearch(Base):
+    __tablename__ = "patent_search"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    technology_id = Column(Integer, ForeignKey("technology.id"))
+    search_query = Column(String(512))
+    search_date = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    technology = relationship("Technology", back_populates="patent_searches")
+    search_results = relationship("PatentResult", back_populates="search")
+
+class PatentResult(Base):
+    __tablename__ = "patent_result"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    search_id = Column(Integer, ForeignKey("patent_search.id"))
+    patent_id = Column(String(255))  # The Google Patents ID
+    title = Column(String(512))
+    abstract = Column(Text)
+    publication_date = Column(String(255))
+    url = Column(String(512))
+    
+    # Relationships
+    search = relationship("PatentSearch", back_populates="search_results")

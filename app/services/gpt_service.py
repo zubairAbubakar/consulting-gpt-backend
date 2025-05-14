@@ -10,6 +10,7 @@ from openai import OpenAI, RateLimitError
 from app.core.config import settings
 from sqlalchemy.orm import Session
 from app.models.technology import Technology, ComparisonAxis
+from app.services.patent_service import PatentService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -42,6 +43,7 @@ class GPTService:
         self.model = "gpt-4-turbo-preview"  # Using the latest model
         self.db = db
         self.rate_limiter = RateLimiter()
+        self.patent_service = PatentService(db)
         
     @lru_cache(maxsize=100)
     async def get_embedding(self, text: str, model: str = "text-embedding-ada-002") -> List[float]:
@@ -503,3 +505,24 @@ class GPTService:
                 search_terms.append(kw["word"])
                 
         return " ".join(search_terms)
+
+    async def search_related_patents(self, technology_id: int) -> Optional[PatentSearch]:
+        """
+        Search for patents related to a technology using its search keywords
+        
+        Args:
+            technology_id: ID of the technology to search patents for
+            
+        Returns:
+            PatentSearch object containing results or None if error
+        """
+        # Get the technology
+        technology = self.get_technology_by_id(technology_id)
+        if not technology or not technology.search_keywords:
+            return None
+            
+        # Execute patent search
+        return await self.patent_service.search_patents(
+            technology_id=technology_id,
+            search_query=technology.search_keywords
+        )
