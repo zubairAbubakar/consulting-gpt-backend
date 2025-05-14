@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, Float, DateTime
 from sqlalchemy.orm import relationship
 from app.models.base import Base
+from datetime import datetime
 
 class Technology(Base):
     __tablename__ = "technology"
@@ -9,7 +10,8 @@ class Technology(Base):
     name = Column(String(255), unique=True, index=True)
     abstract = Column(Text)
     problem_statement = Column(Text)
-    
+    search_keywords = Column(Text, nullable=True)  # Adding search keywords column
+
     # Relationships
     comparison_axes = relationship("ComparisonAxis", back_populates="technology")
     related_technologies = relationship("RelatedTechnology", back_populates="technology")

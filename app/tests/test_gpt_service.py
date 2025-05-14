@@ -28,19 +28,24 @@ def gpt_service(db):
 @pytest.fixture
 def mock_chat_completion():
     """Create a mock chat completion response"""
+    from openai.types.chat import ChatCompletionMessage
+    from openai.types.chat.chat_completion import Choice
+    
     message = ChatCompletionMessage(
         content="Test response",
         role="assistant",
         function_call=None,
         tool_calls=None
     )
+    choice = Choice(
+        finish_reason="stop",
+        index=0,
+        message=message,
+        logprobs=None
+    )
     return ChatCompletion(
         id="test_id",
-        choices=[{
-            "finish_reason": "stop",
-            "index": 0,
-            "message": message,
-        }],
+        choices=[choice],
         created=int(time.time()),
         model="gpt-4",
         object="chat.completion",
@@ -307,3 +312,53 @@ async def test_rate_limiter():
     elapsed_time = time.time() - start_time
     
     assert elapsed_time >= 60  # Should have waited at least a minute
+
+@pytest.mark.asyncio
+async def test_get_search_term_score(gpt_service, mock_chat_completion):
+    # Configure mock to return a score
+    mock_chat_completion.choices[0].message.content = "0.75"
+    gpt_service.client.chat.completions.create = AsyncMock(return_value=mock_chat_completion)
+    
+    # Test scoring
+    score = await gpt_service.get_search_term_score("nanomachines")
+    assert isinstance(score, float)
+    assert 0 <= score <= 1
+    assert score == 0.75
+    
+    # Test with invalid response
+    mock_chat_completion.choices[0].message.content = "not a number"
+    score = await gpt_service.get_search_term_score("test")
+    assert score == 0.0
+
+@pytest.mark.asyncio
+async def test_get_search_keywords(gpt_service, mock_chat_completion):
+    # Mock dependencies
+    gpt_service.get_embedding = AsyncMock(return_value=[0.5] * 1536)
+    gpt_service.calculate_similarity = AsyncMock(return_value=0.8)
+    gpt_service.get_search_term_score = AsyncMock(return_value=0.7)
+    
+    # Configure chat completion mock to return keywords
+    mock_chat_completion.choices[0].message.content = "machine,learning"
+    gpt_service.client.chat.completions.create = AsyncMock(return_value=mock_chat_completion)
+    
+    # Test keyword generation
+    keywords = await gpt_service.get_search_keywords(
+        problem_statement="How to improve machine learning model performance",
+        keyword_count=2
+    )
+    
+    assert isinstance(keywords, str)
+    assert len(keywords.split()) == 2
+    assert "machine" in keywords
+    assert "learning" in keywords
+    
+    # Verify all dependencies were called
+    assert gpt_service.client.chat.completions.create.called
+    assert gpt_service.get_embedding.called
+    assert gpt_service.calculate_similarity.called
+    assert gpt_service.get_search_term_score.called
+    
+    # Test with empty response
+    mock_chat_completion.choices[0].message.content = ""
+    keywords = await gpt_service.get_search_keywords("test", keyword_count=2)
+    assert keywords == ""
