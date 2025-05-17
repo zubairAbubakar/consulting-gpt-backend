@@ -6,15 +6,50 @@ import logging
 import asyncio
 from functools import lru_cache
 import time
-from openai import OpenAI, RateLimitError
+from openai import AsyncOpenAI, RateLimitError
+from openai.types.chat import ChatCompletion
 from app.core.config import settings
 from sqlalchemy.orm import Session
 from app.models.technology import Technology, ComparisonAxis, PatentSearch, PatentResult
 from app.services.patent_service import PatentService
+from collections import OrderedDict
+from datetime import datetime, timedelta
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class AsyncLRUCache:
+    """Custom LRU cache for async functions"""
+    def __init__(self, maxsize=100, ttl=3600):  # 1 hour TTL default
+        self.cache = OrderedDict()
+        self.maxsize = maxsize
+        self.ttl = ttl
+
+    async def get_or_set(self, key, coroutine_func):
+        now = datetime.now()
+        
+        # Check if key exists and is not expired
+        if key in self.cache:
+            value, timestamp = self.cache[key]
+            if now - timestamp < timedelta(seconds=self.ttl):
+                self.cache.move_to_end(key)
+                return value
+            else:
+                del self.cache[key]
+
+        # Generate new value
+        value = await coroutine_func()
+        
+        # Add to cache
+        self.cache[key] = (value, now)
+        self.cache.move_to_end(key)
+        
+        # Remove oldest if cache is too large
+        if len(self.cache) > self.maxsize:
+            self.cache.popitem(last=False)
+            
+        return value
 
 class RateLimiter:
     """Simple rate limiter for API calls"""
@@ -39,13 +74,12 @@ class GPTService:
     
     def __init__(self, db: Session):
         """Initialize the GPT service with API key from settings."""
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = "gpt-4-turbo-preview"  # Using the latest model
         self.db = db
         self.rate_limiter = RateLimiter()
         self.patent_service = PatentService(db)
         
-    @lru_cache(maxsize=100)
     async def get_embedding(self, text: str, model: str = "text-embedding-ada-002") -> List[float]:
         """
         Get embedding vector for text using OpenAI's embedding model.
@@ -112,7 +146,7 @@ class GPTService:
         for attempt in range(retry_count):
             try:
                 await self.rate_limiter.acquire()
-                response = await self.client.chat.completions.create(
+                response: ChatCompletion = await self.client.chat.completions.create(
                     model=self.model,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -138,7 +172,7 @@ class GPTService:
                     continue
                 return None
 
-    async def get_problem_statement(self, technology_description: str) -> str:
+    async def generate_problem_statement(self, technology_description: str) -> str:
         """
         Generate a problem statement from a technology description.
         
@@ -199,21 +233,38 @@ class GPTService:
             user_prompt=raw_axes,
             temperature=0.0
         )
-        return result or ""
+        if not result:
+            return ""
+        
+        # Clean up any markdown or extra formatting
+        cleaned_result = (
+            result
+            .replace("```csv", "")
+            .replace("```", "")
+            .strip()
+        )
+        
+        # Validate CSV format
+        lines = [line.strip() for line in cleaned_result.split('\n') if line.strip()]
+        if not lines or not lines[0].lower().startswith("axis,extreme1,extreme2"):
+            # If header is missing, add it
+            lines.insert(0, "Axis,Extreme1,Extreme2")
+        
+        return "\n".join(lines)
 
     async def generate_comparison_axes(
         self, 
-        technology_description: str,
         technology_name: str,
-        data_dir: str,
-        num_axes: int = 3
+        problem_statement: str,
+        num_axes: int,
+        technology_description: str,
     ) -> Tuple[pd.DataFrame, str]:
         """
         Generate complete comparison axes analysis for a technology.
         
-        Args:
-            technology_description: Description of the technology to analyze
+        Args:            
             technology_name: Name of the technology
+            problem_statement: Problem statement for the technology
             data_dir: Base directory to store results
             num_axes: Number of comparison axes to generate (default: 3)
             
@@ -222,11 +273,6 @@ class GPTService:
             - DataFrame with comparison axes
             - Problem statement string
         """
-        # Generate problem statement
-        problem_statement = await self.get_problem_statement(technology_description)
-        if not problem_statement:
-            return pd.DataFrame(), ""
-
         # Generate raw axes
         raw_axes = await self.get_raw_axes(problem_statement)
         if not raw_axes:
@@ -237,31 +283,55 @@ class GPTService:
         if not axes_csv:
             return pd.DataFrame(), problem_statement
 
-        # Parse CSV into DataFrame
-        axes_rows = axes_csv.split("\n")
-        cols = axes_rows[0].split(",")  # Header row
-        data = [row.split(",") for row in axes_rows[1:]]
-        comp_axes = pd.DataFrame(data, columns=cols)
+        try:
+            # Clean the CSV string and split into lines
+            lines = [line.strip() for line in axes_csv.split('\n') if line.strip()]
+            
+            if not lines:
+                logger.error("No valid CSV lines found")
+                return pd.DataFrame(), problem_statement
+                
+            # Parse header and data separately
+            header = [col.strip() for col in lines[0].split(',')]
+            data = []
+            
+            for line in lines[1:]:
+                row = [cell.strip() for cell in line.split(',')]
+                if len(row) == len(header):  # Only include rows that match header length
+                    data.append(row)
 
-        # Create technology directory and save files
-        tech_dir = os.path.join(data_dir, technology_name)
-        os.makedirs(tech_dir, exist_ok=True)
+            # Create DataFrame with explicit column names
+            comp_axes = pd.DataFrame(data, columns=header)
+            
+            # Verify DataFrame structure
+            required_cols = ['Axis', 'Extreme1', 'Extreme2']
+            if not all(col in comp_axes.columns for col in required_cols):
+                logger.error(f"Missing required columns. Found: {comp_axes.columns.tolist()}")
+                return pd.DataFrame(), problem_statement
 
-        # Save comparison axes CSV
-        csv_path = os.path.join(tech_dir, "comp_axes.csv")
-        comp_axes.to_csv(csv_path, index=False)
+            # Create technology directory and save files
+            tech_dir = os.path.join(os.getcwd(), "data", technology_name)
+            os.makedirs(tech_dir, exist_ok=True)
 
-        # Save metadata JSON
-        metadata = {
-            "name": technology_name,
-            "Problem Statement": problem_statement,
-            "Explanation": technology_description,
-            "path": "comp_axes.csv"
-        }
-        with open(os.path.join(tech_dir, "meta_data.json"), "w") as f:
-            json.dump(metadata, f, indent=4)
+            # Save comparison axes CSV
+            csv_path = os.path.join(tech_dir, "comp_axes.csv")
+            comp_axes.to_csv(csv_path, index=False)
 
-        return comp_axes, problem_statement
+            # Save metadata JSON
+            metadata = {
+                "name": technology_name,
+                "Problem Statement": problem_statement,
+                "Explanation": technology_description,
+                "path": "comp_axes.csv"
+            }
+            with open(os.path.join(tech_dir, "meta_data.json"), "w") as f:
+                json.dump(metadata, f, indent=4)
+
+            return comp_axes, problem_statement
+
+        except Exception as e:
+            logger.error(f"Error creating comparison axes DataFrame: {e}")
+            return pd.DataFrame(), problem_statement
 
     def create_technology(self, name: str, abstract: str, problem_statement: str, search_keywords: str = None) -> Technology:
         """Create a new technology entry in the database"""
@@ -340,7 +410,7 @@ class GPTService:
             return None, []
 
         # Generate search keywords
-        search_keywords = await self.get_search_keywords(problem_statement)
+        search_keywords = await self.generate_search_keywords(problem_statement)
 
         # Create technology record
         technology = self.create_technology(
@@ -431,7 +501,7 @@ class GPTService:
         except (ValueError, TypeError):
             return 0.0
 
-    async def get_search_keywords(
+    async def generate_search_keywords(
         self, 
         problem_statement: str,
         keyword_count: int = 2
@@ -451,10 +521,18 @@ class GPTService:
         if not prob_embedding:
             return ""
             
-        # Generate initial keywords
-        system_prompt = (f"Based on this problem statement in user prompt, come up with {keyword_count} "
-                      "single word search terms to find potential competing patented technologies. "
-                      "Output as csv list. Each element should be one word. Do not include quotations.")
+        # Generate initial keywords with properly formatted strings
+        system_prompt = (
+            "You are a patent search specialist. Based on the given problem statement, "
+            f"generate EXACTLY {keyword_count} search terms for patent search. \n\n"
+            "Requirements:\n"
+            f"1. Output MUST be exactly {keyword_count} comma-separated terms\n"
+            "2. Each term MUST be a single word without any quotation marks\n"
+            "3. Do not include numbers, quotations marks, or explanations\n"
+            "4. Do not include generic terms like 'system' or 'device'\n"
+            "5. Focus on specific technical terms\n\n"
+            "Format your response as: term1,term2,term3,term4"
+        )
         
         keyterms = await self._create_chat_completion(
             system_prompt=system_prompt,
@@ -464,24 +542,29 @@ class GPTService:
         
         if not keyterms:
             return ""
-            
-        keywords = [k.strip() for k in keyterms.split(",")]
         
+        print(f"Generated keyterms: {keyterms}")
+        logger.info(f"Generated keyterms: {keyterms}")
+
+        # Clean and validate keywords
+        keywords = [k.strip().replace('"', '').replace("'", "") 
+                for k in keyterms.split(",") 
+                if k.strip()]
+        
+        # Ensure we only take the first keyword_count keywords
+        keywords = keywords[:int(keyword_count)]
+        print(f"Cleaned keywords: {keywords}")
+        logger.info(f"Cleaned keywords: {keywords}")
+
         # Get embeddings and scores for each keyword
         keyword_data = []
         for word in keywords:
-            # Get embedding and calculate similarity with problem statement
             keyword_embedding = await self.get_embedding(word)
             if not keyword_embedding:
                 continue
                 
-            # Calculate cosine similarity with problem statement
             similarity = await self.calculate_similarity(problem_statement, word)
-            
-            # Get specificity score
             specificity = await self.get_search_term_score(word)
-            
-            # Calculate search goodness score - combining both similarity and specificity
             search_goodness = specificity * similarity
             
             keyword_data.append({
@@ -491,20 +574,24 @@ class GPTService:
         
         if not keyword_data:
             return ""
-            
+        
         # Sort by search goodness
         keyword_data.sort(key=lambda x: x["search_goodness"], reverse=True)
         
         # Calculate average goodness
         avg_goodness = sum(k["search_goodness"] for k in keyword_data) / len(keyword_data)
         
-        # Build final search term from keywords above 50% of average goodness
-        search_terms = []
-        for kw in keyword_data:
-            if kw["search_goodness"] > 0.5 * avg_goodness:
-                search_terms.append(kw["word"])
-                
-        return " ".join(search_terms)
+        # Filter keywords above threshold and take top N
+        good_keywords = [
+            kw["word"] for kw in keyword_data 
+            if kw["search_goodness"] > 0.5 * avg_goodness
+        ][:int(keyword_count)]
+        
+        # If we don't have enough keywords after filtering, take top N from original list
+        if len(good_keywords) < keyword_count:
+            good_keywords = [kw["word"] for kw in keyword_data[:int(keyword_count)]]
+        
+        return " ".join(good_keywords)
 
     async def search_related_patents(self, technology_id: int) -> Optional[PatentSearch]:
         """

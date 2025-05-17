@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.v1 import patents, technologies
 
 app = FastAPI(
     title="Consulting GPT API",
@@ -15,6 +16,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(patents.router, prefix="/api/v1/patents", tags=["patents"])
+app.include_router(technologies.router, prefix="/api/v1/technologies", tags=["technologies"])
 
 @app.get("/")
 async def root():

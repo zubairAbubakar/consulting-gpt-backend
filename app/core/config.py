@@ -12,11 +12,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     
     # Database
-    POSTGRES_SERVER: str = "db"  # Default to container service name
+    POSTGRES_SERVER: str = "db"  # Changed from "db" to "localhost"
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "consulting_gpt"
-    DATABASE_URL: str = "postgresql://postgres:postgres@db/consulting_gpt"
+    DATABASE_URL: str = None #"postgresql://postgres:postgres@localhost/consulting_gpt"
     
     # External APIs
     OPENAI_API_KEY: str = "test-key"  # Default for testing
