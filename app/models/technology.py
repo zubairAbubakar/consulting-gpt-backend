@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Float, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Float, DateTime, JSON
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 from datetime import datetime
@@ -11,6 +11,7 @@ class Technology(Base):
     abstract = Column(Text)
     problem_statement = Column(Text)
     search_keywords = Column(Text, nullable=True)  # Adding search keywords column
+    num_of_axes = Column(Integer, default=5)  # Default number of axes for technology comparison
 
     # Relationships
     comparison_axes = relationship("ComparisonAxis", back_populates="technology")
@@ -43,6 +44,9 @@ class RelatedTechnology(Base):
     type = Column(String(50))  # 'patent' or 'paper'
     cluster = Column(Integer, nullable=True)
     url = Column(String(512), nullable=True)  # Added URL field
+    publication_date = Column(String(255))
+    inventors = Column(JSON)
+    assignees = Column(JSON)
     
     # Relationship
     technology = relationship("Technology", back_populates="related_technologies")
@@ -75,6 +79,12 @@ class PatentSearch(Base):
     # Relationships
     technology = relationship("Technology", back_populates="patent_searches")
     search_results = relationship("PatentResult", back_populates="search")
+
+    def __init__(self, **kwargs):
+        # Ensure search_query is stored as a normal string
+        if 'search_query' in kwargs and isinstance(kwargs['search_query'], (list, tuple)):
+            kwargs['search_query'] = ' '.join(kwargs['search_query'])
+        super().__init__(**kwargs)    
 
 class PatentResult(Base):
     __tablename__ = "patent_result"

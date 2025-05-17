@@ -13,6 +13,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=consulting_gpt
+      - DATABASE_URL=postgresql://postgres:postgres@db/consulting_gpt
     depends_on:
       - db
     networks:
@@ -37,4 +38,4 @@ volumes:
 
 networks:
   consulting-gpt-network:
-    name: consulting-gpt-network
+    driver: bridge
