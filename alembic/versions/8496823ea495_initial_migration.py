@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: ea5db774212a
+Revision ID: 8496823ea495
 Revises: 
-Create Date: 2025-05-17 19:09:37.986330
+Create Date: 2025-05-18 18:07:20.280280
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'ea5db774212a'
+revision: str = '8496823ea495'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -57,6 +57,24 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_patent_search_id'), 'patent_search', ['id'], unique=False)
+    op.create_table('related_paper',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('technology_id', sa.Integer(), nullable=True),
+    sa.Column('paper_id', sa.String(length=255), nullable=True),
+    sa.Column('title', sa.String(length=512), nullable=True),
+    sa.Column('abstract', sa.Text(), nullable=True),
+    sa.Column('authors', sa.String(length=512), nullable=True),
+    sa.Column('publication_date', sa.String(length=255), nullable=True),
+    sa.Column('journal', sa.String(length=255), nullable=True),
+    sa.Column('url', sa.String(length=512), nullable=True),
+    sa.Column('citation_count', sa.Integer(), nullable=True),
+    sa.Column('col', sa.Float(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['technology_id'], ['technology.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_related_paper_id'), 'related_paper', ['id'], unique=False)
     op.create_table('related_technology',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('technology_id', sa.Integer(), nullable=True),
@@ -69,6 +87,7 @@ def upgrade() -> None:
     sa.Column('publication_date', sa.String(length=255), nullable=True),
     sa.Column('inventors', sa.JSON(), nullable=True),
     sa.Column('assignees', sa.JSON(), nullable=True),
+    sa.Column('col', sa.Float(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['technology_id'], ['technology.id'], ),
@@ -116,6 +135,8 @@ def downgrade() -> None:
     op.drop_table('analysis_result')
     op.drop_index(op.f('ix_related_technology_id'), table_name='related_technology')
     op.drop_table('related_technology')
+    op.drop_index(op.f('ix_related_paper_id'), table_name='related_paper')
+    op.drop_table('related_paper')
     op.drop_index(op.f('ix_patent_search_id'), table_name='patent_search')
     op.drop_table('patent_search')
     op.drop_index(op.f('ix_comparison_axis_id'), table_name='comparison_axis')

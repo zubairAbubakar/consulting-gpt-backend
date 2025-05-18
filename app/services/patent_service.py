@@ -34,7 +34,6 @@ class PatentService:
         Returns:
             PatentSearch object containing results or None if error
         """
-        print(f"Starting patent search for technology ID {technology_id} with query: {search_query}")
         try:
             
             now = datetime.now(timezone.utc)
@@ -68,7 +67,6 @@ class PatentService:
                     if not search:
                         break
                 
-                print(f"Page {page_count + 1} results: {search}")
                 # Process results
                 organic_results = search.get("organic_results", [])
                 

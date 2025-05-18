@@ -18,6 +18,7 @@ class Technology(Base):
     related_technologies = relationship("RelatedTechnology", back_populates="technology")
     analysis_results = relationship("AnalysisResult", back_populates="technology")
     patent_searches = relationship("PatentSearch", back_populates="technology")
+    related_papers = relationship("RelatedPaper", back_populates="technology")
 
 class ComparisonAxis(Base):
     __tablename__ = "comparison_axis"
@@ -47,10 +48,29 @@ class RelatedTechnology(Base):
     publication_date = Column(String(255))
     inventors = Column(JSON)
     assignees = Column(JSON)
+    col = Column(Float, default=0.0)  # Column for storing additional information
     
     # Relationship
     technology = relationship("Technology", back_populates="related_technologies")
     analysis_results = relationship("AnalysisResult", back_populates="related_technology")
+
+class RelatedPaper(Base):
+    __tablename__ = "related_paper"
+
+    id = Column(Integer, primary_key=True, index=True)
+    technology_id = Column(Integer, ForeignKey("technology.id"))
+    paper_id = Column(String(255))  # PubMed ID
+    title = Column(String(512))
+    abstract = Column(Text)
+    authors = Column(String(512))
+    publication_date = Column(String(255))
+    journal = Column(String(255))
+    url = Column(String(512))
+    citation_count = Column(Integer, default=0)
+    col = Column(Float, default=0.0)  # Column for storing additional information  
+    
+    # Relationships
+    technology = relationship("Technology", back_populates="related_papers")
 
 class AnalysisResult(Base):
     __tablename__ = "analysis_result"

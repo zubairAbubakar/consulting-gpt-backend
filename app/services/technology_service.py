@@ -2,17 +2,24 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 import json
 import asyncio
+import logging
 
-from app.models.technology import Technology, RelatedTechnology, PatentSearch, PatentResult, ComparisonAxis
+from app.models.technology import Technology, RelatedTechnology, RelatedPaper, PatentSearch, PatentResult, ComparisonAxis
 from app.schemas.technology import TechnologyCreate, TechnologyRead, RelatedTechnologyRead
 from app.services.gpt_service import GPTService
 from app.services.patent_service import PatentService
+from app.services.paper_service import PaperService
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class TechnologyService:
     def __init__(self, db: Session):
         self.db = db
         self.gpt_service = GPTService(db)
         self.patent_service = PatentService(db)
+        self.paper_service = PaperService(db)
     
     async def create_technology(self, name: str, abstract: str = None, num_of_axes: int = 3) -> Technology:
         """
@@ -45,8 +52,8 @@ class TechnologyService:
             )
 
             # Debug print to check DataFrame structure
-            print(f"DataFrame columns: {axes_df.columns.tolist()}")
-            print(f"DataFrame content:\n{axes_df}")
+            # print(f"DataFrame columns: {axes_df.columns.tolist()}")
+            # print(f"DataFrame content:\n{axes_df}")
 
             # Save comparison axes to database
             if not axes_df.empty and 'Axis' in axes_df.columns:
@@ -245,3 +252,60 @@ class TechnologyService:
             print(f"Error processing patent results: {e}")
             self.db.rollback()
             return False
+        
+
+    async def search_related_papers(self, technology_id: int) -> bool:
+        """
+        Search and store related papers for a technology with complete details
+        """
+        try:
+            # Get the technology
+            technology = self.get_technology_by_id(technology_id)
+            if not technology or not technology.search_keywords:
+                logger.error("No technology or search keywords found")
+                return False
+    
+            # Search for papers
+            paper_ids = await self.paper_service.search_papers(technology.search_keywords)
+            if not paper_ids:
+                logger.error("No papers found")
+                return False
+    
+            papers_added = 0
+            # Process each paper
+            for paper_id in paper_ids:
+                # Check if paper already exists
+                existing = self.db.query(RelatedPaper).filter(
+                    RelatedPaper.technology_id == technology_id,
+                    RelatedPaper.paper_id == paper_id
+                ).first()
+    
+                if not existing:
+                    # Fetch paper details immediately
+                    details = await self.paper_service.fetch_paper_details(paper_id)
+                    if details:
+                        # Create new paper entry with complete details
+                        paper = RelatedPaper(
+                            technology_id=technology_id,
+                            paper_id=paper_id,
+                            title=details["title"],
+                            abstract=details["abstract"],
+                            authors=details["authors"],
+                            publication_date=details["publication_date"],
+                            journal=details["journal"],
+                            url=details["url"],
+                            citation_count=details["citation_count"]
+                        )
+                        self.db.add(paper)
+                        papers_added += 1
+                        logger.info(f"Added paper: {details['title']}")
+    
+            if papers_added > 0:
+                self.db.commit()
+                logger.info(f"Added {papers_added} new papers")
+            return True
+    
+        except Exception as e:
+            logger.error(f"Error searching papers: {e}")
+            self.db.rollback()
+            return False        
