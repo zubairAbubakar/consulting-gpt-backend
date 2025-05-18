@@ -1,6 +1,0 @@
-{
-    "name": "Bioprinting",
-    "Problem Statement": "This technology addresses the problem of insufficient donor organs available for transplantation and the challenge of immune system rejection of transplanted organs.",
-    "Explanation": "uses 3D printing techniques to create functional tissues and organs. This process involves using a patient's own cells to create a personalized bioink that can be printed layer by layer to form the desired organ or tissue",
-    "path": "comp_axes.csv"
-}

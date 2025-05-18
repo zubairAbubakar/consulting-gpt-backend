@@ -28,6 +28,7 @@ class RelatedTechnologyBase(BaseModel):
     publication_date: Optional[str] = None
     inventors: Optional[str] = None
     assignees: Optional[str] = None
+    col: Optional[float] = 0.0
 
 class RelatedTechnologyRead(RelatedTechnologyBase):
     id: int
