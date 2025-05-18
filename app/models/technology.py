@@ -18,6 +18,7 @@ class Technology(Base):
     related_technologies = relationship("RelatedTechnology", back_populates="technology")
     analysis_results = relationship("AnalysisResult", back_populates="technology")
     patent_searches = relationship("PatentSearch", back_populates="technology")
+    related_papers = relationship("RelatedPaper", back_populates="technology")
 
 class ComparisonAxis(Base):
     __tablename__ = "comparison_axis"

@@ -13,7 +13,7 @@ class PaperService:
     def __init__(self, db: Session):
         self.db = db
         self.base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
-        self.api_key = "YOUR_NCBI_API_KEY"  # Optional but recommended
+        self.api_key = None  # Optional API key for PubMed
         self.sem = asyncio.Semaphore(5)  # Limit concurrent requests
 
     @retry(
@@ -33,9 +33,6 @@ class PaperService:
                     "retmode": "json",
                     "retmax": 10
                 }
-                if self.api_key:
-                    params["api_key"] = self.api_key
-
                 async with aiohttp.ClientSession() as session:
                     async with session.get(search_url, params=params) as response:
                         if response.status == 200:
@@ -66,14 +63,12 @@ class PaperService:
                     "db": "pubmed",
                     "id": paper_id,
                 }
-                if self.api_key:
-                    params["api_key"] = self.api_key
 
                 async with aiohttp.ClientSession() as session:
                     async with session.get(fetch_url, params=params) as response:
                         if response.status == 200:
-                            xml_content = await response.text()
-                            return self._parse_paper_xml(xml_content)
+                            xml_content = await response.text()                            
+                            return self._parse_paper_xml(xml_content, paper_id)
                         else:
                             logger.error(f"Error fetching paper details: {response.status}")
                             return None
@@ -82,7 +77,7 @@ class PaperService:
             logger.error(f"Error fetching paper details: {e}")
             return None
 
-    def _parse_paper_xml(self, xml_content: str) -> Optional[Dict]:
+    def _parse_paper_xml(self, xml_content: str, paper_id: str) -> Optional[Dict]:
         """
         Parse PubMed XML response into structured data
         """

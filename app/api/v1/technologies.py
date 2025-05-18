@@ -2,8 +2,9 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.dependencies import get_db
+from app.schemas.related_paper import RelatedPaperRead
 from app.services.technology_service import TechnologyService
-from app.models.technology import PatentSearch, PatentResult  
+from app.models.technology import PatentSearch, PatentResult, RelatedPaper  
 from app.schemas.technology import (
     TechnologyCreate,
     TechnologyRead,
@@ -158,6 +159,33 @@ async def search_patents(
     
     return {"message": "Searching for patents in background"}
 
+@router.post("/{technology_id}/search-papers")
+async def search_papers(
+    technology_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Search for related papers in background
+    """
+    service = TechnologyService(db)
+    background_tasks.add_task(search_papers_background, technology_id, db)
+    return {"message": "Searching for papers in background"}
+
+@router.get("/{technology_id}/papers")
+async def get_papers(
+    technology_id: int,
+    db: Session = Depends(get_db)
+) -> List[RelatedPaperRead]:
+    """
+    Get all related papers for a technology
+    """
+    service = TechnologyService(db)
+    papers = service.db.query(RelatedPaper).filter(
+        RelatedPaper.technology_id == technology_id
+    ).all()
+    return papers
+
 # Background task functions
 
 async def complete_technology_setup_background(technology_id: int, db: Session):
@@ -185,6 +213,11 @@ async def complete_technology_setup_background(technology_id: int, db: Session):
                 # Continue execution even if processing fails
         else:
             print("Patent search failed, skipping results processing")
+
+        # Search papers
+        print(f"Starting paper search for technology {technology_id}")
+        await service.search_related_papers(technology_id)
+        print(f"Paper search completed for technology {technology_id}")
             
     except Exception as e:
         print(f"Error in background task for technology {technology_id}: {e}")
@@ -235,3 +268,9 @@ async def search_patents_background(technology_id: int, db: Session):
         print(f"Error in patent search background task: {str(e)}")
         import traceback
         print(f"Search error traceback: {traceback.format_exc()}")
+
+# Background task functions
+async def search_papers_background(technology_id: int, db: Session):
+    """Search papers in background"""
+    service = TechnologyService(db)
+    await service.search_related_papers(technology_id)

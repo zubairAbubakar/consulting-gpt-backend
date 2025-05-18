@@ -37,6 +37,24 @@ class RelatedTechnologyRead(RelatedTechnologyBase):
     class Config:
         from_attributes = True
 
+class RelatedPaperBase(BaseModel):
+    paper_id: str
+    title: str
+    abstract: Optional[str] = None
+    authors: Optional[str] = None
+    publication_date: Optional[str] = None
+    journal: Optional[str] = None
+    url: Optional[str] = None
+    citation_count: Optional[int] = 0
+    col: Optional[float] = 0.0
+
+class RelatedPaperRead(RelatedPaperBase):
+    id: int
+    technology_id: int
+
+    class Config:
+        from_attributes = True
+
 class AnalysisResultBase(BaseModel):
     score: float
     explanation: str
@@ -62,6 +80,7 @@ class TechnologyCreate(TechnologyBase):
 class TechnologyRead(TechnologyBase):
     id: int
     search_keywords: Optional[str] = None
+    problem_statement: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -69,6 +88,7 @@ class TechnologyRead(TechnologyBase):
 class TechnologyDetailRead(TechnologyRead):
     comparison_axes: List[ComparisonAxisRead] = []
     related_technologies: List[RelatedTechnologyRead] = []
+    related_papers: List[RelatedPaperRead] = []
 
     class Config:
         from_attributes = True
