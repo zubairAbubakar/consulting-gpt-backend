@@ -55,20 +55,6 @@ class RelatedPaperRead(RelatedPaperBase):
     class Config:
         from_attributes = True
 
-class AnalysisResultBase(BaseModel):
-    score: float
-    explanation: str
-    confidence: float
-
-class AnalysisResultRead(AnalysisResultBase):
-    id: int
-    technology_id: int
-    related_technology_id: int
-    axis_id: int
-
-    class Config:
-        from_attributes = True
-
 class TechnologyBase(BaseModel):
     name: str
     abstract: str

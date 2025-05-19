@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
-from app.models import Technology, ComparisonAxis, RelatedTechnology, AnalysisResult
+from app.models import Technology, ComparisonAxis, RelatedTechnology
 from app.db.database import SessionLocal
+from app.models.technology import MarketAnalysis
 
 def create_test_data():
     db = SessionLocal()
@@ -56,9 +57,9 @@ def create_test_data():
         db.add_all(related_techs)
         db.flush()
 
-        # Create analysis results
-        analysis_results = [
-            AnalysisResult(
+        # Create Market analyses
+        market_analyses = [
+            MarketAnalysis(
                 technology_id=llm_tech.id,
                 related_technology_id=related_techs[0].id,  # GPT-4
                 axis_id=axes[0].id,  # Resource Requirements
@@ -66,7 +67,7 @@ def create_test_data():
                 explanation="GPT-4 requires significant computational resources for both training and inference",
                 confidence=0.95
             ),
-            AnalysisResult(
+            MarketAnalysis(
                 technology_id=llm_tech.id,
                 related_technology_id=related_techs[0].id,  # GPT-4
                 axis_id=axes[1].id,  # Accuracy
@@ -74,7 +75,7 @@ def create_test_data():
                 explanation="GPT-4 demonstrates very high accuracy across various tasks",
                 confidence=0.9
             ),
-            AnalysisResult(
+            MarketAnalysis(
                 technology_id=llm_tech.id,
                 related_technology_id=related_techs[1].id,  # BERT
                 axis_id=axes[0].id,  # Resource Requirements
@@ -82,7 +83,7 @@ def create_test_data():
                 explanation="BERT requires moderate computational resources",
                 confidence=0.85
             ),
-            AnalysisResult(
+            MarketAnalysis(
                 technology_id=llm_tech.id,
                 related_technology_id=related_techs[1].id,  # BERT
                 axis_id=axes[1].id,  # Accuracy
@@ -91,7 +92,7 @@ def create_test_data():
                 confidence=0.85
             )
         ]
-        db.add_all(analysis_results)
+        db.add_all(market_analyses)
         
         # Commit all changes
         db.commit()
@@ -126,8 +127,8 @@ def verify_data(db: Session):
         print(f"- {rel.name}: {rel.abstract[:50]}...")
     
     # Verify analysis results
-    results = db.query(AnalysisResult).all()
-    print(f"\nVerified Analysis Results ({len(results)}):")
+    results = db.query(MarketAnalysis).all()
+    print(f"\nVerified Market Analyses ({len(results)}):")
     for result in results:
         print(f"- Score {result.score:.2f} (Confidence: {result.confidence:.2f})")
 

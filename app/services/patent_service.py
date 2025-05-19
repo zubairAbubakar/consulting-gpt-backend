@@ -3,7 +3,7 @@ from serpapi import GoogleSearch
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from app.core.config import settings
-from app.models.technology import PatentSearch, PatentResult, Technology
+from app.models.technology import PatentSearch, PatentResult, RelatedTechnology, Technology
 import logging
 import asyncio
 from asyncio import Semaphore
@@ -310,3 +310,4 @@ class PatentService:
                 "failed": 0,
                 "error": str(e)
             }
+               

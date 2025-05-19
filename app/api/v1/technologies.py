@@ -2,10 +2,12 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.dependencies import get_db
+from app.schemas.market_analysis import MarketAnalysisRead
 from app.schemas.related_paper import RelatedPaperRead
 from app.services.technology_service import TechnologyService
-from app.models.technology import PatentSearch, PatentResult, RelatedPaper  
+from app.models.technology import MarketAnalysis, PatentSearch, PatentResult, RelatedPaper  
 from app.schemas.technology import (
+    ComparisonAxisRead,
     TechnologyCreate,
     TechnologyRead,
     RelatedTechnologyRead
@@ -186,6 +188,51 @@ async def get_papers(
     ).all()
     return papers
 
+
+@router.post("/{technology_id}/market-analysis")
+async def perform_market_analysis(
+    technology_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger market analysis in background
+    """
+    service = TechnologyService(db)
+    background_tasks.add_task(market_analysis_background, technology_id, db)
+    return {"message": "Market analysis started in background"}
+
+@router.get("/{technology_id}/market-analysis")
+async def get_market_analysis(
+    technology_id: int,
+    db: Session = Depends(get_db)
+) -> List[MarketAnalysisRead]:
+    """
+    Get market analysis results
+    """
+    service = TechnologyService(db)
+    analyses = service.db.query(MarketAnalysis).filter(
+        MarketAnalysis.technology_id == technology_id
+    ).all()
+    return analyses
+
+@router.get("/{technology_id}/comparison-axes", response_model=List[ComparisonAxisRead])
+def get_comparison_axes(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all comparison axes for a technology
+    """
+    service = TechnologyService(db)
+    technology = service.get_technology_by_id(technology_id)
+    if not technology:
+        raise HTTPException(status_code=404, detail="Technology not found")
+        
+    axes = service.get_comparison_axes(technology_id)
+    return axes
+
+
 # Background task functions
 
 async def complete_technology_setup_background(technology_id: int, db: Session):
@@ -218,6 +265,10 @@ async def complete_technology_setup_background(technology_id: int, db: Session):
         print(f"Starting paper search for technology {technology_id}")
         await service.search_related_papers(technology_id)
         print(f"Paper search completed for technology {technology_id}")
+
+        # Perform market analysis
+        print(f"Starting market analysis for technology {technology_id}")
+        await service.perform_market_analysis(technology_id)
             
     except Exception as e:
         print(f"Error in background task for technology {technology_id}: {e}")
@@ -274,3 +325,8 @@ async def search_papers_background(technology_id: int, db: Session):
     """Search papers in background"""
     service = TechnologyService(db)
     await service.search_related_papers(technology_id)
+
+async def market_analysis_background(technology_id: int, db: Session):
+    """Run market analysis in background"""
+    service = TechnologyService(db)
+    await service.perform_market_analysis(technology_id)

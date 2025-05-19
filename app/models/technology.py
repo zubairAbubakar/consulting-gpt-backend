@@ -16,7 +16,7 @@ class Technology(Base):
     # Relationships
     comparison_axes = relationship("ComparisonAxis", back_populates="technology")
     related_technologies = relationship("RelatedTechnology", back_populates="technology")
-    analysis_results = relationship("AnalysisResult", back_populates="technology")
+    market_analyses = relationship("MarketAnalysis", back_populates="technology")
     patent_searches = relationship("PatentSearch", back_populates="technology")
     related_papers = relationship("RelatedPaper", back_populates="technology")
 
@@ -32,7 +32,7 @@ class ComparisonAxis(Base):
     
     # Relationship
     technology = relationship("Technology", back_populates="comparison_axes")
-    analysis_results = relationship("AnalysisResult", back_populates="axis")
+    market_analyses = relationship("MarketAnalysis", back_populates="comparison_axis")
 
 class RelatedTechnology(Base):
     __tablename__ = "related_technology"
@@ -52,7 +52,7 @@ class RelatedTechnology(Base):
     
     # Relationship
     technology = relationship("Technology", back_populates="related_technologies")
-    analysis_results = relationship("AnalysisResult", back_populates="related_technology")
+    market_analyses = relationship("MarketAnalysis", back_populates="related_technology")
 
 class RelatedPaper(Base):
     __tablename__ = "related_paper"
@@ -72,21 +72,21 @@ class RelatedPaper(Base):
     # Relationships
     technology = relationship("Technology", back_populates="related_papers")
 
-class AnalysisResult(Base):
-    __tablename__ = "analysis_result"
+class MarketAnalysis(Base):
+    __tablename__ = "market_analysis"
 
     id = Column(Integer, primary_key=True, index=True)
     technology_id = Column(Integer, ForeignKey("technology.id"))
     related_technology_id = Column(Integer, ForeignKey("related_technology.id"))
     axis_id = Column(Integer, ForeignKey("comparison_axis.id"))
-    score = Column(Float)
-    explanation = Column(Text)
+    score = Column(Float)  # -1 to 1 score
+    explanation = Column(Text, nullable=True)
     confidence = Column(Float)
     
     # Relationships
-    technology = relationship("Technology", back_populates="analysis_results")
-    related_technology = relationship("RelatedTechnology", back_populates="analysis_results")
-    axis = relationship("ComparisonAxis", back_populates="analysis_results")
+    technology = relationship("Technology", back_populates="market_analyses")
+    related_technology = relationship("RelatedTechnology", back_populates="market_analyses")
+    comparison_axis = relationship("ComparisonAxis", back_populates="market_analyses")
 
 class PatentSearch(Base):
     __tablename__ = "patent_search"

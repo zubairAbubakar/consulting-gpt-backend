@@ -4,7 +4,7 @@ import json
 import asyncio
 import logging
 
-from app.models.technology import Technology, RelatedTechnology, RelatedPaper, PatentSearch, PatentResult, ComparisonAxis
+from app.models.technology import MarketAnalysis, Technology, RelatedTechnology, RelatedPaper, PatentSearch, PatentResult, ComparisonAxis
 from app.schemas.technology import TechnologyCreate, TechnologyRead, RelatedTechnologyRead
 from app.services.gpt_service import GPTService
 from app.services.patent_service import PatentService
@@ -167,6 +167,15 @@ class TechnologyService:
             print(f"Error generating comparison axes: {e}")
             return False
     
+
+    def get_comparison_axes(self, technology_id: int) -> List[ComparisonAxis]:
+        """
+        Get all comparison axes for a specific technology
+        """
+        return self.db.query(ComparisonAxis).filter(
+            ComparisonAxis.technology_id == technology_id
+        ).all()
+
     async def search_patents(self, technology_id: int) -> bool:
         """
         Search for patents related to a technology
@@ -309,3 +318,87 @@ class TechnologyService:
             logger.error(f"Error searching papers: {e}")
             self.db.rollback()
             return False        
+        
+
+    async def perform_market_analysis(self, technology_id: int) -> bool:
+        """
+        Perform market analysis for a technology across all comparison axes
+        """
+        try:
+            # Get the technology and its components
+            technology = self.get_technology_by_id(technology_id)
+            if not technology:
+                return False
+
+            # Get comparison axes
+            axes = technology.comparison_axes
+            if not axes:
+                logger.error("No comparison axes found")
+                return False
+
+            # Get related technologies (both patents and papers)
+            related_techs = self.db.query(RelatedTechnology).filter(
+                RelatedTechnology.technology_id == technology_id
+            ).all()
+
+            if not related_techs:
+                logger.error("No related technologies found")
+                return False
+
+            # Analyze each technology across each axis
+            for tech in related_techs:
+                # Skip technologies without abstracts
+                if not tech.abstract:
+                    logger.warning(f"Skipping technology {tech.id} - {tech.name}: No abstract available")
+                    continue
+
+                for axis in axes:
+                    # Check if analysis already exists
+                    existing = self.db.query(MarketAnalysis).filter(
+                        MarketAnalysis.technology_id == technology_id,
+                        MarketAnalysis.related_technology_id == tech.id,
+                        MarketAnalysis.axis_id == axis.id
+                    ).first()
+
+                    if not existing:
+                        try:
+                            # Perform analysis with safeguards
+                            abstract = tech.abstract.strip() if tech.abstract else tech.name
+                            if len(abstract) < 10:  # Skip if abstract is too short
+                                logger.warning(f"Skipping analysis for tech {tech.id}: Abstract too short")
+                                continue
+
+                            result = await self.gpt_service.analyze_technology_on_axis(
+                                abstract=abstract,
+                                axis_name=axis.axis_name,
+                                extreme1=axis.extreme1,
+                                extreme2=axis.extreme2,
+                                problem_statement=technology.problem_statement
+                            )
+
+                            if result and "score" in result:
+                                # Save analysis
+                                analysis = MarketAnalysis(
+                                    technology_id=technology_id,
+                                    related_technology_id=tech.id,
+                                    axis_id=axis.id,
+                                    score=result.get("score", 0.0),
+                                    explanation=result.get("explanation", "No explanation provided"),
+                                    confidence=result.get("confidence", 0.0)
+                                )
+                                self.db.add(analysis)
+                                logger.info(f"Added analysis for tech {tech.id} on axis {axis.axis_name}")
+                            else:
+                                logger.warning(f"No valid analysis result for tech {tech.id} on axis {axis.axis_name}")
+
+                        except Exception as analysis_error:
+                            logger.error(f"Error analyzing tech {tech.id} on axis {axis.axis_name}: {analysis_error}")
+                            continue  # Continue with next axis instead of failing completely
+
+            self.db.commit()
+            return True
+
+        except Exception as e:
+            logger.error(f"Error performing market analysis: {e}")
+            self.db.rollback()
+            return False

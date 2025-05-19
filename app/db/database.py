@@ -9,7 +9,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Import base and models to ensure they are registered
 from app.models.base import Base
-from app.models import Technology, ComparisonAxis, RelatedTechnology, AnalysisResult
+from app.models import Technology, ComparisonAxis, RelatedTechnology
 
 # Dependency
 def get_db():

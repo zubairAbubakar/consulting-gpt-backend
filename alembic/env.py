@@ -7,7 +7,7 @@ from alembic import context
 
 # Import your models here
 from app.models.base import Base
-from app.models.technology import Technology, ComparisonAxis, RelatedTechnology, AnalysisResult, PatentSearch, PatentResult
+from app.models.technology import Technology, ComparisonAxis, RelatedTechnology, PatentSearch, PatentResult
 from app.core.config import settings
 
 # this is the Alembic Config object, which provides

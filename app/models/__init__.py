@@ -1,10 +1,13 @@
 from app.models.base import Base
-from app.models.technology import Technology, ComparisonAxis, RelatedTechnology, AnalysisResult
+from app.models.technology import Technology, ComparisonAxis, RelatedTechnology
 
 __all__ = [
     "Base",
     "Technology",
     "ComparisonAxis",
     "RelatedTechnology",
-    "AnalysisResult",
+    "MarketAnalysis",
+    "RelatedPaper",
+    "PatentSearch",
+    "PatentResult",
 ]
