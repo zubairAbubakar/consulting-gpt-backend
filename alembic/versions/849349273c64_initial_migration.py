@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: cdac848cee8c
+Revision ID: 849349273c64
 Revises: 
-Create Date: 2025-05-19 18:31:29.396000
+Create Date: 2025-05-20 22:29:06.580601
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'cdac848cee8c'
+revision: str = '849349273c64'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -57,6 +57,18 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_patent_search_id'), 'patent_search', ['id'], unique=False)
+    op.create_table('pca_results',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('technology_id', sa.Integer(), nullable=True),
+    sa.Column('components', sa.JSON(), nullable=True),
+    sa.Column('transformed_data', sa.JSON(), nullable=True),
+    sa.Column('total_variance_explained', sa.Float(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['technology_id'], ['technology.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_pca_results_id'), 'pca_results', ['id'], unique=False)
     op.create_table('related_paper',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('technology_id', sa.Integer(), nullable=True),
@@ -137,6 +149,8 @@ def downgrade() -> None:
     op.drop_table('related_technology')
     op.drop_index(op.f('ix_related_paper_id'), table_name='related_paper')
     op.drop_table('related_paper')
+    op.drop_index(op.f('ix_pca_results_id'), table_name='pca_results')
+    op.drop_table('pca_results')
     op.drop_index(op.f('ix_patent_search_id'), table_name='patent_search')
     op.drop_table('patent_search')
     op.drop_index(op.f('ix_comparison_axis_id'), table_name='comparison_axis')

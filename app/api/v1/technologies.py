@@ -1,19 +1,26 @@
+import logging
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.dependencies import get_db
 from app.schemas.market_analysis import MarketAnalysisRead
+from app.schemas.pca_component import PCAResultRead
 from app.schemas.related_paper import RelatedPaperRead
 from app.services.technology_service import TechnologyService
-from app.models.technology import MarketAnalysis, PatentSearch, PatentResult, RelatedPaper  
+from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper  
 from app.schemas.technology import (
     ComparisonAxisRead,
     TechnologyCreate,
     TechnologyRead,
     RelatedTechnologyRead
 )
+from app.services.visualization_service import VisualizationService
 
 router = APIRouter()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @router.post("/", response_model=TechnologyRead)
 async def create_technology(
@@ -232,9 +239,102 @@ def get_comparison_axes(
     axes = service.get_comparison_axes(technology_id)
     return axes
 
+@router.post("/{technology_id}/pca", response_model=PCAResultRead)
+async def create_pca_analysis(
+    technology_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger PCA analysis for a technology
+    """
+    service = TechnologyService(db)
+    
+    # Check if technology exists
+    technology = service.get_technology_by_id(technology_id)
+    if not technology:
+        raise HTTPException(status_code=404, detail="Technology not found")
+    
+    # Perform PCA analysis
+    pca_result = await service.perform_pca_analysis(technology_id)
+    if not pca_result:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not perform PCA analysis. Ensure market analysis has been completed."
+        )
+    
+    # Generate component descriptions in background
+    background_tasks.add_task(
+        service.describe_pca_components,
+        pca_result,
+        technology
+    )
+    
+    return pca_result
+
+@router.get("/{technology_id}/pca", response_model=List[PCAResultRead])
+async def get_pca_results(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get PCA analysis results for a technology
+    """
+    service = TechnologyService(db)
+    
+    # Check if technology exists
+    technology = service.get_technology_by_id(technology_id)
+    if not technology:
+        raise HTTPException(status_code=404, detail="Technology not found")
+    
+    try:
+        # Get PCA results
+        results = db.query(PCAResult).filter(
+            PCAResult.technology_id == technology_id
+        ).all()
+        
+        # Return empty list if no results found
+        return results if results else []
+        
+    except Exception as e:
+        logger.warning(f"Error fetching PCA results: {e}")
+        # Return empty list instead of throwing an error
+        return []
+
+@router.get("/{technology_id}/visualization", response_model=Dict)
+async def get_visualization_data(
+    technology_id: int,
+    viz_type: str = "pca",  # or "raw"
+    db: Session = Depends(get_db)
+):
+    """
+    Get visualization data for a technology
+    """
+    service = TechnologyService(db)
+    viz_service = VisualizationService()
+    
+    if viz_type == "pca":
+        pca_result = db.query(PCAResult)\
+            .filter(PCAResult.technology_id == technology_id)\
+            .order_by(PCAResult.id.desc())\
+            .first()
+            
+        if not pca_result:
+            raise HTTPException(
+                status_code=404,
+                detail="No PCA results found"
+            )
+            
+        return viz_service.prepare_pca_plot_data(pca_result)
+        
+    else:  # raw axes plot
+        analyses = db.query(MarketAnalysis)\
+            .filter(MarketAnalysis.technology_id == technology_id)\
+            .all()
+            
+        return viz_service.prepare_axes_plot_data(analyses)
 
 # Background task functions
-
 async def complete_technology_setup_background(technology_id: int, db: Session):
     """Complete technology setup in background"""
     service = TechnologyService(db)

@@ -19,6 +19,7 @@ class Technology(Base):
     market_analyses = relationship("MarketAnalysis", back_populates="technology")
     patent_searches = relationship("PatentSearch", back_populates="technology")
     related_papers = relationship("RelatedPaper", back_populates="technology")
+    pca_results = relationship("PCAResult", back_populates="technology")
 
 class ComparisonAxis(Base):
     __tablename__ = "comparison_axis"
@@ -119,3 +120,14 @@ class PatentResult(Base):
     
     # Relationships
     search = relationship("PatentSearch", back_populates="search_results")
+
+class PCAResult(Base):
+    __tablename__ = "pca_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    technology_id = Column(Integer, ForeignKey("technology.id"))
+    components = Column(JSON)  # Stores component info including variance ratios
+    transformed_data = Column(JSON)  # Stores transformed coordinates
+    total_variance_explained = Column(Float)
+
+    technology = relationship("Technology", back_populates="pca_results")

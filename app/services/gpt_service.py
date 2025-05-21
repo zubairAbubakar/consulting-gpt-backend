@@ -709,3 +709,39 @@ class GPTService:
             "explanation": response.get("explanation", ""),
             "confidence": float(response.get("confidence", 0.0))
         }
+    
+    async def describe_pca_component(
+        self,
+        component_loadings: Dict[str, float],
+        problem_statement: str
+    ) -> str:
+        """
+        Generate a description of what a principal component represents based on its loadings
+        """
+        system_prompt = (
+            "You are analyzing a principal component from a PCA analysis of technologies. "
+            "Based on how different comparison axes contribute to this component, "
+            "describe what this component might represent in simple terms.\n\n"
+            f"Context - Problem Statement: {problem_statement}\n\n"
+            "Provide a concise one-sentence description focusing on the strongest contributing factors."
+        )
+
+        # Format the loadings into a readable string
+        loadings_str = "\n".join([
+            f"{axis}: {loading:.3f}"
+            for axis, loading in sorted(
+                component_loadings.items(),
+                key=lambda x: abs(x[1]),
+                reverse=True
+            )
+        ])
+
+        user_prompt = f"Component loadings:\n{loadings_str}"
+        
+        response = await self.analyze_with_gpt(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.7
+        )
+        
+        return response.get("explanation", "Description not available")
