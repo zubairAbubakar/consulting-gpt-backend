@@ -7,7 +7,7 @@ from app.schemas.market_analysis import MarketAnalysisRead
 from app.schemas.pca_component import PCAResultRead
 from app.schemas.related_paper import RelatedPaperRead
 from app.services.technology_service import TechnologyService
-from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper  
+from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper, ClusterResult, ClusterMember   
 from app.schemas.technology import (
     ComparisonAxisRead,
     TechnologyCreate,
@@ -333,6 +333,43 @@ async def get_visualization_data(
             .all()
             
         return viz_service.prepare_axes_plot_data(analyses)
+
+@router.post("/{technology_id}/clustering")
+async def create_clustering(
+    technology_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Trigger clustering analysis
+    """
+    service = TechnologyService(db)
+    
+    # Ensure technology exists
+    technology = service.get_technology_by_id(technology_id)
+    if not technology:
+        raise HTTPException(status_code=404, detail="Technology not found")
+    
+    # Run clustering in background
+    background_tasks.add_task(service.perform_clustering, technology_id)
+    
+    return {"message": "Clustering analysis started"}
+
+@router.get("/{technology_id}/clusters")
+async def get_clusters(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get clustering results
+    """
+    service = TechnologyService(db)
+    
+    clusters = db.query(ClusterResult)\
+        .filter(ClusterResult.technology_id == technology_id)\
+        .all()
+        
+    return clusters
 
 # Background task functions
 async def complete_technology_setup_background(technology_id: int, db: Session):

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Float, DateTime, JSON
+from sqlalchemy import Boolean, Column, Integer, String, Text, ForeignKey, Float, DateTime, JSON
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 from datetime import datetime
@@ -20,6 +20,7 @@ class Technology(Base):
     patent_searches = relationship("PatentSearch", back_populates="technology")
     related_papers = relationship("RelatedPaper", back_populates="technology")
     pca_results = relationship("PCAResult", back_populates="technology")
+    cluster_results = relationship("ClusterResult", back_populates="technology")
 
 class ComparisonAxis(Base):
     __tablename__ = "comparison_axis"
@@ -54,6 +55,7 @@ class RelatedTechnology(Base):
     # Relationship
     technology = relationship("Technology", back_populates="related_technologies")
     market_analyses = relationship("MarketAnalysis", back_populates="related_technology")
+    cluster_memberships = relationship("ClusterMember", back_populates="related_technology")
 
 class RelatedPaper(Base):
     __tablename__ = "related_paper"
@@ -131,3 +133,36 @@ class PCAResult(Base):
     total_variance_explained = Column(Float)
 
     technology = relationship("Technology", back_populates="pca_results")
+
+class ClusterResult(Base):
+    __tablename__ = "cluster_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    technology_id = Column(Integer, ForeignKey("technology.id"))
+    name = Column(String(255))
+    description = Column(Text)
+    contains_target = Column(Boolean, default=False)
+    center_x = Column(Float)  # X coordinate of cluster center
+    center_y = Column(Float)  # Y coordinate of cluster center
+    cluster_spread = Column(Float)  # Average distance to center
+    technology_count = Column(Integer)  # Number of technologies in cluster
+
+    # Relationships
+    technology = relationship("Technology", back_populates="cluster_results")
+    cluster_members = relationship("ClusterMember", back_populates="cluster")
+
+class ClusterMember(Base):
+    __tablename__ = "cluster_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cluster_id = Column(Integer, ForeignKey("cluster_results.id"))
+    technology_id = Column(Integer, ForeignKey("related_technology.id"))
+    distance_to_center = Column(Float)  # Distance to cluster center
+    
+    # Relationships
+    cluster = relationship("ClusterResult", back_populates="cluster_members")
+    related_technology = relationship(
+        "RelatedTechnology",
+        back_populates="cluster_memberships",
+        foreign_keys=[technology_id]
+    )

@@ -745,3 +745,46 @@ class GPTService:
         )
         
         return response.get("explanation", "Description not available")
+    
+
+    async def analyze_cluster(
+        self,
+        abstracts: List[str],
+        problem_statement: str
+    ) -> Dict[str, str]:
+        """
+        Generate name and description for a cluster of technologies
+        """
+        name_prompt = (
+            "Given the abstracts of the following technologies, generate a name "
+            "for the cluster based on similarities in technologies and methods "
+            f"described and how they relate to the problem statement: {problem_statement}\n\n"
+            "Return only the title."
+        )
+        
+        description_prompt = (
+            "Given the abstracts of the following technologies, generate a description "
+            "for the cluster in 2 to 3 sentences explaining the common thread between "
+            "these technologies and how they relate to the problem statement: "
+            f"{problem_statement}"
+        )
+        
+        abstracts_text = "\n\n".join(abstracts)
+        
+        # Use _create_chat_completion directly instead of analyze_with_gpt
+        name = await self._create_chat_completion(
+            system_prompt=name_prompt,
+            user_prompt=abstracts_text,
+            temperature=1.0
+        )
+        
+        description = await self._create_chat_completion(
+            system_prompt=description_prompt,
+            user_prompt=abstracts_text,
+            temperature=1.0
+        )
+        
+        return {
+            "name": name or "Unnamed Cluster",
+            "description": description or "No description available"
+        }
