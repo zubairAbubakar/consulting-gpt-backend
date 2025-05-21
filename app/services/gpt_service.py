@@ -1,4 +1,4 @@
-from typing import Tuple, Optional, List, Any
+from typing import Dict, Tuple, Optional, List, Any
 import os
 import json
 import pandas as pd
@@ -613,3 +613,99 @@ class GPTService:
             technology_id=technology_id,
             search_query=technology.search_keywords
         )
+
+    async def analyze_with_gpt(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.0
+    ) -> Dict[str, Any]:
+        """
+        Get structured analysis from GPT with score, explanation, and confidence.
+        
+        Args:
+            system_prompt: The system message that sets up the analysis
+            user_prompt: The content to analyze
+            temperature: Controls randomness of the response
+            
+        Returns:
+            Dictionary containing:
+            - score: float between -1 and 1
+            - explanation: string explaining the rating
+            - confidence: float between 0 and 1
+        """
+        enhanced_system_prompt = (
+            f"{system_prompt}\n\n"
+            "Provide your response in JSON format with the following fields:\n"
+            "- score: decimal number between -1 and 1 to two decimal places\n"
+            "- explanation: brief explanation of your rating\n"
+            "- confidence: decimal number between 0 and 1 indicating your confidence in the rating\n\n"
+            "Example response format:\n"
+            '{"score": 0.75, "explanation": "This technology shows strong...", "confidence": 0.85}'
+        )
+        
+        try:
+            response = await self._create_chat_completion(
+                system_prompt=enhanced_system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature
+            )
+            
+            if not response:
+                return {"score": 0.0, "explanation": "", "confidence": 0.0}
+                
+            # Parse JSON response
+            try:
+                result = json.loads(response)
+                # Validate and clean the response
+                return {
+                    "score": float(result.get("score", 0.0)),
+                    "explanation": str(result.get("explanation", "")),
+                    "confidence": float(result.get("confidence", 0.0))
+                }
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse GPT response as JSON: {response}")
+                # Try to extract just the score if JSON parsing fails
+                try:
+                    score = float(response.strip())
+                    return {
+                        "score": score,
+                        "explanation": "",
+                        "confidence": 0.5
+                    }
+                except ValueError:
+                    return {"score": 0.0, "explanation": "", "confidence": 0.0}
+                    
+        except Exception as e:
+            logger.error(f"Error in analyze_with_gpt: {e}")
+            return {"score": 0.0, "explanation": "", "confidence": 0.0}
+
+    async def analyze_technology_on_axis(
+        self,
+        abstract: str,
+        axis_name: str,
+        extreme1: str,
+        extreme2: str,
+        problem_statement: str
+    ) -> Dict[str, float]:
+        """
+        Analyze a technology on a specific comparison axis
+        """
+        system_prompt = (
+            f"Given the abstract and explanation of a technology, rate the technology "
+            f"on the axis of {axis_name} with -1 being closer to {extreme1} and 1 "
+            f"being closer to {extreme2} when it comes to this technology's ability "
+            f"to address this problem statement: {problem_statement}"
+        )
+        user_prompt = f"Abstract: {abstract}"
+        
+        response = await self.analyze_with_gpt(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt
+        )
+        
+        return {
+            "score": float(response.get("score", 0.0)),
+            "explanation": response.get("explanation", ""),
+            "confidence": float(response.get("confidence", 0.0))
+        }
