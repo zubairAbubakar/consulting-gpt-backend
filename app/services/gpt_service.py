@@ -709,3 +709,82 @@ class GPTService:
             "explanation": response.get("explanation", ""),
             "confidence": float(response.get("confidence", 0.0))
         }
+    
+    async def describe_pca_component(
+        self,
+        component_loadings: Dict[str, float],
+        problem_statement: str
+    ) -> str:
+        """
+        Generate a description of what a principal component represents based on its loadings
+        """
+        system_prompt = (
+            "You are analyzing a principal component from a PCA analysis of technologies. "
+            "Based on how different comparison axes contribute to this component, "
+            "describe what this component might represent in simple terms.\n\n"
+            f"Context - Problem Statement: {problem_statement}\n\n"
+            "Provide a concise one-sentence description focusing on the strongest contributing factors."
+        )
+
+        # Format the loadings into a readable string
+        loadings_str = "\n".join([
+            f"{axis}: {loading:.3f}"
+            for axis, loading in sorted(
+                component_loadings.items(),
+                key=lambda x: abs(x[1]),
+                reverse=True
+            )
+        ])
+
+        user_prompt = f"Component loadings:\n{loadings_str}"
+        
+        response = await self.analyze_with_gpt(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=0.7
+        )
+        
+        return response.get("explanation", "Description not available")
+    
+
+    async def analyze_cluster(
+        self,
+        abstracts: List[str],
+        problem_statement: str
+    ) -> Dict[str, str]:
+        """
+        Generate name and description for a cluster of technologies
+        """
+        name_prompt = (
+            "Given the abstracts of the following technologies, generate a name "
+            "for the cluster based on similarities in technologies and methods "
+            f"described and how they relate to the problem statement: {problem_statement}\n\n"
+            "Return only the title."
+        )
+        
+        description_prompt = (
+            "Given the abstracts of the following technologies, generate a description "
+            "for the cluster in 2 to 3 sentences explaining the common thread between "
+            "these technologies and how they relate to the problem statement: "
+            f"{problem_statement}"
+        )
+        
+        abstracts_text = "\n\n".join(abstracts)
+        
+        # Use _create_chat_completion directly instead of analyze_with_gpt
+        name = await self._create_chat_completion(
+            system_prompt=name_prompt,
+            user_prompt=abstracts_text,
+            temperature=1.0
+        )
+        
+        description = await self._create_chat_completion(
+            system_prompt=description_prompt,
+            user_prompt=abstracts_text,
+            temperature=1.0
+        )
+        
+        return {
+            "name": name or "Unnamed Cluster",
+            "description": description or "No description available"
+        }

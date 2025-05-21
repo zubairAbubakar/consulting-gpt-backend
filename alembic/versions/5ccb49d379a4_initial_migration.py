@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: cdac848cee8c
+Revision ID: 5ccb49d379a4
 Revises: 
-Create Date: 2025-05-19 18:31:29.396000
+Create Date: 2025-05-21 22:27:24.304248
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'cdac848cee8c'
+revision: str = '5ccb49d379a4'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -33,6 +33,22 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_technology_id'), 'technology', ['id'], unique=False)
     op.create_index(op.f('ix_technology_name'), 'technology', ['name'], unique=True)
+    op.create_table('cluster_results',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('technology_id', sa.Integer(), nullable=True),
+    sa.Column('name', sa.String(length=255), nullable=True),
+    sa.Column('description', sa.Text(), nullable=True),
+    sa.Column('contains_target', sa.Boolean(), nullable=True),
+    sa.Column('center_x', sa.Float(), nullable=True),
+    sa.Column('center_y', sa.Float(), nullable=True),
+    sa.Column('cluster_spread', sa.Float(), nullable=True),
+    sa.Column('technology_count', sa.Integer(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['technology_id'], ['technology.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_cluster_results_id'), 'cluster_results', ['id'], unique=False)
     op.create_table('comparison_axis',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('technology_id', sa.Integer(), nullable=True),
@@ -57,6 +73,18 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_patent_search_id'), 'patent_search', ['id'], unique=False)
+    op.create_table('pca_results',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('technology_id', sa.Integer(), nullable=True),
+    sa.Column('components', sa.JSON(), nullable=True),
+    sa.Column('transformed_data', sa.JSON(), nullable=True),
+    sa.Column('total_variance_explained', sa.Float(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['technology_id'], ['technology.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_pca_results_id'), 'pca_results', ['id'], unique=False)
     op.create_table('related_paper',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('technology_id', sa.Integer(), nullable=True),
@@ -94,6 +122,18 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_related_technology_id'), 'related_technology', ['id'], unique=False)
+    op.create_table('cluster_members',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('cluster_id', sa.Integer(), nullable=True),
+    sa.Column('technology_id', sa.Integer(), nullable=True),
+    sa.Column('distance_to_center', sa.Float(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['cluster_id'], ['cluster_results.id'], ),
+    sa.ForeignKeyConstraint(['technology_id'], ['related_technology.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_cluster_members_id'), 'cluster_members', ['id'], unique=False)
     op.create_table('market_analysis',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('technology_id', sa.Integer(), nullable=True),
@@ -133,14 +173,20 @@ def downgrade() -> None:
     op.drop_table('patent_result')
     op.drop_index(op.f('ix_market_analysis_id'), table_name='market_analysis')
     op.drop_table('market_analysis')
+    op.drop_index(op.f('ix_cluster_members_id'), table_name='cluster_members')
+    op.drop_table('cluster_members')
     op.drop_index(op.f('ix_related_technology_id'), table_name='related_technology')
     op.drop_table('related_technology')
     op.drop_index(op.f('ix_related_paper_id'), table_name='related_paper')
     op.drop_table('related_paper')
+    op.drop_index(op.f('ix_pca_results_id'), table_name='pca_results')
+    op.drop_table('pca_results')
     op.drop_index(op.f('ix_patent_search_id'), table_name='patent_search')
     op.drop_table('patent_search')
     op.drop_index(op.f('ix_comparison_axis_id'), table_name='comparison_axis')
     op.drop_table('comparison_axis')
+    op.drop_index(op.f('ix_cluster_results_id'), table_name='cluster_results')
+    op.drop_table('cluster_results')
     op.drop_index(op.f('ix_technology_name'), table_name='technology')
     op.drop_index(op.f('ix_technology_id'), table_name='technology')
     op.drop_table('technology')

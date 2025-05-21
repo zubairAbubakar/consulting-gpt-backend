@@ -1,10 +1,16 @@
+import numpy as np
+import pandas as pd
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+
 import json
 import asyncio
 import logging
 
-from app.models.technology import MarketAnalysis, Technology, RelatedTechnology, RelatedPaper, PatentSearch, PatentResult, ComparisonAxis
+from app.models.technology import ClusterMember, ClusterResult, MarketAnalysis, PCAResult, Technology, RelatedTechnology, RelatedPaper, PatentSearch, PatentResult, ComparisonAxis
 from app.schemas.technology import TechnologyCreate, TechnologyRead, RelatedTechnologyRead
 from app.services.gpt_service import GPTService
 from app.services.patent_service import PatentService
@@ -402,3 +408,218 @@ class TechnologyService:
             logger.error(f"Error performing market analysis: {e}")
             self.db.rollback()
             return False
+
+
+    async def perform_pca_analysis(self, technology_id: int) -> Optional[PCAResult]:
+        """
+        Perform PCA analysis on market analysis results
+        """
+        try:
+            # Get market analysis data
+            analyses = self.db.query(MarketAnalysis).filter(
+                MarketAnalysis.technology_id == technology_id
+            ).all()
+
+            if not analyses:
+                logger.error("No market analyses found for PCA")
+                return None
+
+            # Organize data into DataFrame
+            data_dict = {}
+            tech_names = {}
+            
+            for analysis in analyses:
+                tech_id = analysis.related_technology_id
+                if tech_id not in data_dict:
+                    data_dict[tech_id] = {}
+                    tech = self.db.query(RelatedTechnology).get(tech_id)
+                    tech_names[tech_id] = tech.name
+
+                axis = self.db.query(ComparisonAxis).get(analysis.axis_id)
+                data_dict[tech_id][axis.axis_name] = analysis.score
+
+            # Convert to DataFrame and handle missing values
+            df = pd.DataFrame.from_dict(data_dict, orient='index')
+            df = df.fillna(0)  # Fill missing values with 0
+            
+            if df.empty:
+                logger.error("No valid data for PCA")
+                return None
+
+            # Standardize the data
+            scaler = StandardScaler()
+            scaled_data = scaler.fit_transform(df)
+
+            # Perform PCA with 2 components (matching old implementation)
+            pca = PCA(n_components=2)
+            transformed_data = pca.fit_transform(scaled_data)
+
+            # Create results dictionary with technology names
+            transformed_dict = {
+                tech_names[tech_id]: transformed_data[i].tolist()
+                for i, tech_id in enumerate(data_dict.keys())
+            }
+
+            # Store component information
+            components = []
+            for i, (ratio, loadings) in enumerate(zip(
+                pca.explained_variance_ratio_,
+                pca.components_
+            )):
+                # Create loadings dictionary for each axis
+                axis_loadings = {
+                    col: float(loading)
+                    for col, loading in zip(df.columns, loadings)
+                }
+                
+                components.append({
+                    "component_number": i + 1,
+                    "explained_variance_ratio": float(ratio),
+                    "loadings": axis_loadings,
+                    "description": f"Principal Component {i + 1}"
+                })
+
+            # Create PCA result
+            pca_result = PCAResult(
+                technology_id=technology_id,
+                components=components,
+                transformed_data=transformed_dict,
+                total_variance_explained=float(sum(pca.explained_variance_ratio_))
+            )
+
+            self.db.add(pca_result)
+            self.db.commit()
+
+            logger.info(f"PCA analysis completed. Total variance explained: {pca_result.total_variance_explained:.2%}")
+            return pca_result
+
+        except Exception as e:
+            logger.error(f"Error performing PCA analysis: {e}")
+            self.db.rollback()
+            return None
+
+
+    async def describe_pca_components(self, pca_result: PCAResult, technology: Technology) -> None:
+        """
+        Generate descriptions for PCA components
+        """
+        try:
+            # Get the original loadings from PCA
+            df = pd.DataFrame.from_dict(pca_result.transformed_data, orient='index')
+            
+            for component in pca_result.components:
+                # Get loadings for this component
+                component_loadings = {
+                    axis: loading
+                    for axis, loading in zip(df.columns, component["loadings"])
+                }
+                
+                # Get description from GPT
+                description = await self.gpt_service.describe_pca_component(
+                    component_loadings,
+                    technology.problem_statement
+                )
+                
+                component["description"] = description
+            
+            # Update PCA result
+            pca_result.components = pca_result.components
+            self.db.commit()
+
+        except Exception as e:
+            logger.error(f"Error describing PCA components: {e}")
+
+
+    async def perform_clustering(self, technology_id: int) -> bool:
+        """
+        Perform clustering analysis based on PCA results
+        """
+        try:
+            # Get latest PCA result
+            pca_result = self.db.query(PCAResult)\
+                .filter(PCAResult.technology_id == technology_id)\
+                .order_by(PCAResult.created_at.desc())\
+                .first()
+            
+            if not pca_result:
+                logger.error("No PCA results found for clustering")
+                return False
+
+            # Convert PCA data to numpy array for clustering
+            tech_names = list(pca_result.transformed_data.keys())
+            points = np.array([pca_result.transformed_data[name] for name in tech_names])
+            
+            # Perform KMeans clustering
+            kmeans = KMeans(n_clusters=3, random_state=42)
+            cluster_labels = kmeans.fit_predict(points)
+            
+            # Get the technology being analyzed
+            technology = self.get_technology_by_id(technology_id)
+            
+            # Process each cluster
+            for i in range(3):  # 3 clusters
+                # Get points and technologies in this cluster
+                cluster_mask = cluster_labels == i
+                cluster_points = points[cluster_mask]
+                cluster_tech_names = [tech_names[j] for j, mask in enumerate(cluster_mask) if mask]
+                
+                # Calculate cluster metrics
+                center = kmeans.cluster_centers_[i]
+                distances = np.linalg.norm(cluster_points - center, axis=1)
+                spread = np.mean(distances)
+                
+                # Get abstracts for cluster description
+                abstracts = []
+                for tech_name in cluster_tech_names:
+                    tech = self.db.query(RelatedTechnology)\
+                        .filter(
+                            RelatedTechnology.technology_id == technology_id,
+                            RelatedTechnology.name == tech_name
+                        ).first()
+                    if tech and tech.abstract:
+                        abstracts.append(f"{tech.name}: {tech.abstract}")
+                
+                # Generate cluster description using GPT
+                cluster_info = await self.gpt_service.analyze_cluster(
+                    abstracts=abstracts,
+                    problem_statement=technology.problem_statement
+                )
+                
+                # Create cluster result with enhanced metrics
+                cluster = ClusterResult(
+                    technology_id=technology_id,
+                    name=cluster_info["name"],
+                    description=cluster_info["description"],
+                    contains_target=technology.name in cluster_tech_names,
+                    center_x=float(center[0]),
+                    center_y=float(center[1]),
+                    cluster_spread=float(spread),
+                    technology_count=len(cluster_points)
+                )
+                self.db.add(cluster)
+                self.db.flush()  # Get cluster ID
+                
+                # Add cluster members with distance metrics
+                for tech_name, point in zip(cluster_tech_names, cluster_points):
+                    tech = self.db.query(RelatedTechnology)\
+                        .filter(
+                            RelatedTechnology.technology_id == technology_id,
+                            RelatedTechnology.name == tech_name
+                        ).first()
+                    if tech:
+                        distance = float(np.linalg.norm(point - center))
+                        member = ClusterMember(
+                            cluster_id=cluster.id,
+                            technology_id=tech.id,
+                            distance_to_center=distance
+                        )
+                        self.db.add(member)
+            
+            self.db.commit()
+            logger.info(f"Clustering completed for technology {technology_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error performing clustering: {e}")
+            self.db.rollback()
+            return False        
