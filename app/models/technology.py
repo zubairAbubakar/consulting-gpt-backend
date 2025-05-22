@@ -21,6 +21,7 @@ class Technology(Base):
     related_papers = relationship("RelatedPaper", back_populates="technology")
     pca_results = relationship("PCAResult", back_populates="technology")
     cluster_results = relationship("ClusterResult", back_populates="technology")
+    recommendations = relationship("Recommendation", back_populates="technology")
 
 class ComparisonAxis(Base):
     __tablename__ = "comparison_axis"
@@ -166,3 +167,17 @@ class ClusterMember(Base):
         back_populates="cluster_memberships",
         foreign_keys=[technology_id]
     )
+
+class Recommendation(Base):
+    __tablename__ = "recommendations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    technology_id = Column(Integer, ForeignKey("technology.id"))
+    general_assessment = Column(Text)
+    logistical_showstoppers = Column(Text)
+    market_showstoppers = Column(Text)
+    current_stage = Column(String(255))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    technology = relationship("Technology", back_populates="recommendations")

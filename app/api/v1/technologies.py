@@ -6,10 +6,13 @@ from app.dependencies import get_db
 from app.schemas.cluster import ClusterDetailRead
 from app.schemas.market_analysis import MarketAnalysisRead
 from app.schemas.pca_component import PCAResultRead
+from app.schemas.recommendation import RecommendationRequest, RecommendationResponse
 from app.schemas.related_paper import RelatedPaperRead
 from app.schemas.visualization import VisualizationParams
+from app.services.gpt_service import GPTService
+from app.services.recommendation_service import RecommendationService
 from app.services.technology_service import TechnologyService
-from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper, ClusterResult, ClusterMember   
+from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper, ClusterResult, ClusterMember, Technology   
 from app.schemas.technology import (
     ComparisonAxisRead,
     TechnologyCreate,
@@ -457,6 +460,59 @@ async def get_cluster_details(
         "created_at": cluster.created_at,
         "members": members
     }
+
+
+@router.post(
+    "/{technology_id}/recommendations",
+    response_model=RecommendationResponse
+)
+async def generate_recommendations(
+    technology_id: int,
+    request: RecommendationRequest,
+    db: Session = Depends(get_db)
+):
+    """Generate commercialization recommendations"""
+    
+    # Get technology details
+    technology = db.query(Technology)\
+        .filter(Technology.id == technology_id)\
+        .first()
+    
+    if not technology:
+        raise HTTPException(status_code=404, detail="Technology not found")
+        
+    # Get market analysis data
+    market_analyses = db.query(MarketAnalysis)\
+        .options(joinedload(MarketAnalysis.comparison_axis))\
+        .filter(MarketAnalysis.technology_id == technology_id)\
+        .all()
+        
+    # Format market data
+    market_data = {
+        "axes": [
+            {
+                "name": analysis.comparison_axis.axis_name,
+                "score": analysis.score,
+                "technology": analysis.related_technology.name
+            }
+            for analysis in market_analyses
+        ]
+    }
+    
+    # Initialize services with db session
+    gpt_service = GPTService(db)
+    recommendation_service = RecommendationService(gpt_service, db)
+    
+    recommendations = await recommendation_service.generate_recommendations(
+        technology_id=technology_id,
+        name=technology.name,
+        problem_statement=technology.problem_statement,
+        abstract=technology.abstract,
+        current_stage=request.current_stage,
+        market_data=market_data
+    )
+    
+    return recommendations
 
 # Background task functions
 async def complete_technology_setup_background(technology_id: int, db: Session):

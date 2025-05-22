@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 5ccb49d379a4
+Revision ID: 1dad9ec37413
 Revises: 
-Create Date: 2025-05-21 22:27:24.304248
+Create Date: 2025-05-22 22:26:47.077732
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '5ccb49d379a4'
+revision: str = '1dad9ec37413'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -85,6 +85,19 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_pca_results_id'), 'pca_results', ['id'], unique=False)
+    op.create_table('recommendations',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('technology_id', sa.Integer(), nullable=True),
+    sa.Column('general_assessment', sa.Text(), nullable=True),
+    sa.Column('logistical_showstoppers', sa.Text(), nullable=True),
+    sa.Column('market_showstoppers', sa.Text(), nullable=True),
+    sa.Column('current_stage', sa.String(length=255), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['technology_id'], ['technology.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_recommendations_id'), 'recommendations', ['id'], unique=False)
     op.create_table('related_paper',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('technology_id', sa.Integer(), nullable=True),
@@ -179,6 +192,8 @@ def downgrade() -> None:
     op.drop_table('related_technology')
     op.drop_index(op.f('ix_related_paper_id'), table_name='related_paper')
     op.drop_table('related_paper')
+    op.drop_index(op.f('ix_recommendations_id'), table_name='recommendations')
+    op.drop_table('recommendations')
     op.drop_index(op.f('ix_pca_results_id'), table_name='pca_results')
     op.drop_table('pca_results')
     op.drop_index(op.f('ix_patent_search_id'), table_name='patent_search')

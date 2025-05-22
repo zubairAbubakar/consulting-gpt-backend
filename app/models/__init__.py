@@ -1,5 +1,18 @@
 from app.models.base import Base
-from app.models.technology import Technology, ComparisonAxis, RelatedTechnology, MarketAnalysis, RelatedPaper, PatentSearch, PatentResult, PCAResult, ClusterResult, ClusterMember
+from app.models.technology import (
+    Technology, 
+    ComparisonAxis, 
+    RelatedTechnology, 
+    MarketAnalysis, 
+    RelatedPaper, 
+    PatentSearch, 
+    PatentResult, 
+    PCAResult, 
+    ClusterResult, 
+    ClusterMember, 
+    Recommendation
+    )
+
 
 __all__ = [
     "Base",
@@ -13,4 +26,5 @@ __all__ = [
     "PCAResult",
     "ClusterResult",
     "ClusterMember",
+    "Recommendation",
 ]
