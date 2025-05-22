@@ -1,12 +1,13 @@
 import logging
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session, joinedload
 from app.dependencies import get_db
 from app.schemas.cluster import ClusterDetailRead
 from app.schemas.market_analysis import MarketAnalysisRead
 from app.schemas.pca_component import PCAResultRead
 from app.schemas.related_paper import RelatedPaperRead
+from app.schemas.visualization import VisualizationParams
 from app.services.technology_service import TechnologyService
 from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper, ClusterResult, ClusterMember   
 from app.schemas.technology import (
@@ -302,38 +303,72 @@ async def get_pca_results(
         # Return empty list instead of throwing an error
         return []
 
-@router.get("/{technology_id}/visualization", response_model=Dict)
+@router.get("/{technology_id}/visualization")
 async def get_visualization_data(
     technology_id: int,
-    viz_type: str = "pca",  # or "raw"
+    show_clusters: bool = Query(False, description="Toggle cluster visualization"),
+    viz_type: str = Query("pca", description="Visualization type: pca, raw, or combined"),
+    selected_axes: Optional[List[str]] = Query(None, description="List of axes to show"),
+    show_labels: bool = Query(True, description="Show technology labels"),
+    show_annotations: bool = Query(True, description="Show additional annotations"),
     db: Session = Depends(get_db)
 ):
     """
-    Get visualization data for a technology
+    Get enhanced visualization data with interactive features
     """
-    service = TechnologyService(db)
     viz_service = VisualizationService()
     
-    if viz_type == "pca":
-        pca_result = db.query(PCAResult)\
-            .filter(PCAResult.technology_id == technology_id)\
-            .order_by(PCAResult.id.desc())\
-            .first()
-            
-        if not pca_result:
-            raise HTTPException(
-                status_code=404,
-                detail="No PCA results found"
-            )
-            
-        return viz_service.prepare_pca_plot_data(pca_result)
-        
-    else:  # raw axes plot
-        analyses = db.query(MarketAnalysis)\
+    # Get all required data
+    pca_result = db.query(PCAResult)\
+        .filter(PCAResult.technology_id == technology_id)\
+        .order_by(PCAResult.id.desc())\
+        .first()
+    
+    cluster_results = None
+    if show_clusters:
+        cluster_results = db.query(ClusterResult)\
+            .options(joinedload(ClusterResult.cluster_members)
+                    .joinedload(ClusterMember.related_technology))\
+            .filter(ClusterResult.technology_id == technology_id)\
+            .all()
+    
+    market_analyses = None
+    if viz_type in ["raw", "combined"]:
+        market_analyses = db.query(MarketAnalysis)\
+            .options(joinedload(MarketAnalysis.comparison_axis))\
             .filter(MarketAnalysis.technology_id == technology_id)\
             .all()
-            
-        return viz_service.prepare_axes_plot_data(analyses)
+    
+    return viz_service.prepare_visualization_data(
+        pca_result=pca_result,
+        market_analyses=market_analyses,
+        cluster_results=cluster_results,
+        show_clusters=show_clusters,
+        selected_axes=selected_axes,
+        show_labels=show_labels,
+        show_annotations=show_annotations
+    )
+
+@router.get("/{technology_id}/visualization/silhouette")
+async def get_silhouette_analysis(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get silhouette analysis for clustering"""
+    viz_service = VisualizationService()
+    
+    pca_result = db.query(PCAResult)\
+        .filter(PCAResult.technology_id == technology_id)\
+        .order_by(PCAResult.id.desc())\
+        .first()
+    
+    if not pca_result:
+        raise HTTPException(
+            status_code=404,
+            detail="No PCA results found"
+        )
+        
+    return viz_service.prepare_silhouette_analysis(pca_result)
 
 @router.post("/{technology_id}/clustering")
 async def create_clustering(
