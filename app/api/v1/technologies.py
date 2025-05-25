@@ -272,9 +272,9 @@ async def create_pca_analysis(
     
     # Generate component descriptions in background
     background_tasks.add_task(
-        service.describe_pca_components,
-        pca_result,
-        technology
+        service.describe_pca_components_background,
+        technology_id,
+        pca_result.id
     )
     
     return pca_result
@@ -308,72 +308,6 @@ async def get_pca_results(
         # Return empty list instead of throwing an error
         return []
 
-@router.get("/{technology_id}/visualization")
-async def get_visualization_data(
-    technology_id: int,
-    show_clusters: bool = Query(False, description="Toggle cluster visualization"),
-    viz_type: str = Query("pca", description="Visualization type: pca, raw, or combined"),
-    selected_axes: Optional[List[str]] = Query(None, description="List of axes to show"),
-    show_labels: bool = Query(True, description="Show technology labels"),
-    show_annotations: bool = Query(True, description="Show additional annotations"),
-    db: Session = Depends(get_db)
-):
-    """
-    Get enhanced visualization data with interactive features
-    """
-    viz_service = VisualizationService()
-    
-    # Get all required data
-    pca_result = db.query(PCAResult)\
-        .filter(PCAResult.technology_id == technology_id)\
-        .order_by(PCAResult.id.desc())\
-        .first()
-    
-    cluster_results = None
-    if show_clusters:
-        cluster_results = db.query(ClusterResult)\
-            .options(joinedload(ClusterResult.cluster_members)
-                    .joinedload(ClusterMember.related_technology))\
-            .filter(ClusterResult.technology_id == technology_id)\
-            .all()
-    
-    market_analyses = None
-    if viz_type in ["raw", "combined"]:
-        market_analyses = db.query(MarketAnalysis)\
-            .options(joinedload(MarketAnalysis.comparison_axis))\
-            .filter(MarketAnalysis.technology_id == technology_id)\
-            .all()
-    
-    return viz_service.prepare_visualization_data(
-        pca_result=pca_result,
-        market_analyses=market_analyses,
-        cluster_results=cluster_results,
-        show_clusters=show_clusters,
-        selected_axes=selected_axes,
-        show_labels=show_labels,
-        show_annotations=show_annotations
-    )
-
-@router.get("/{technology_id}/visualization/silhouette")
-async def get_silhouette_analysis(
-    technology_id: int,
-    db: Session = Depends(get_db)
-):
-    """Get silhouette analysis for clustering"""
-    viz_service = VisualizationService()
-    
-    pca_result = db.query(PCAResult)\
-        .filter(PCAResult.technology_id == technology_id)\
-        .order_by(PCAResult.id.desc())\
-        .first()
-    
-    if not pca_result:
-        raise HTTPException(
-            status_code=404,
-            detail="No PCA results found"
-        )
-        
-    return viz_service.prepare_silhouette_analysis(pca_result)
 
 @router.post("/{technology_id}/clustering")
 async def create_clustering(
@@ -464,6 +398,73 @@ async def get_cluster_details(
     }
 
 
+@router.get("/{technology_id}/visualization")
+async def get_visualization_data(
+    technology_id: int,
+    show_clusters: bool = Query(False, description="Toggle cluster visualization"),
+    viz_type: str = Query("pca", description="Visualization type: pca, raw, or combined"),
+    selected_axes: Optional[List[str]] = Query(None, description="List of axes to show"),
+    show_labels: bool = Query(True, description="Show technology labels"),
+    show_annotations: bool = Query(True, description="Show additional annotations"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get enhanced visualization data with interactive features
+    """
+    viz_service = VisualizationService()
+    
+    # Get all required data
+    pca_result = db.query(PCAResult)\
+        .filter(PCAResult.technology_id == technology_id)\
+        .order_by(PCAResult.id.desc())\
+        .first()
+    
+    cluster_results = None
+    if show_clusters:
+        cluster_results = db.query(ClusterResult)\
+            .options(joinedload(ClusterResult.cluster_members)
+                    .joinedload(ClusterMember.related_technology))\
+            .filter(ClusterResult.technology_id == technology_id)\
+            .all()
+    
+    market_analyses = None
+    if viz_type in ["raw", "combined"]:
+        market_analyses = db.query(MarketAnalysis)\
+            .options(joinedload(MarketAnalysis.comparison_axis))\
+            .filter(MarketAnalysis.technology_id == technology_id)\
+            .all()
+    
+    return viz_service.prepare_visualization_data(
+        pca_result=pca_result,
+        market_analyses=market_analyses,
+        cluster_results=cluster_results,
+        show_clusters=show_clusters,
+        selected_axes=selected_axes,
+        show_labels=show_labels,
+        show_annotations=show_annotations
+    )
+
+@router.get("/{technology_id}/visualization/silhouette")
+async def get_silhouette_analysis(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get silhouette analysis for clustering"""
+    viz_service = VisualizationService()
+    
+    pca_result = db.query(PCAResult)\
+        .filter(PCAResult.technology_id == technology_id)\
+        .order_by(PCAResult.id.desc())\
+        .first()
+    
+    if not pca_result:
+        raise HTTPException(
+            status_code=404,
+            detail="No PCA results found"
+        )
+        
+    return viz_service.prepare_silhouette_analysis(pca_result)
+
 @router.post(
     "/{technology_id}/recommendations",
     response_model=RecommendationResponse
@@ -548,7 +549,7 @@ async def create_medical_assessment(
     
     return assessment
 
-@router.get("/classify-association")
+@router.get("/{technology_id}/classify-association")
 async def classify_medical_association(
     technology_id: int,
     db: Session = Depends(get_db)

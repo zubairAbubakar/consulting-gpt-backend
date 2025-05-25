@@ -195,6 +195,7 @@ class MedicalAssessment(Base):
     # Relationships
     technology = relationship("Technology", back_populates="medical_assessments")
     billable_items = relationship("BillableItem", back_populates="medical_assessment")
+    guidelines = relationship("Guidelines", back_populates="medical_assessment")
 
 class BillableItem(Base):
     __tablename__ = "billable_items"
@@ -207,3 +208,17 @@ class BillableItem(Base):
     
     # Relationships
     medical_assessment = relationship("MedicalAssessment", back_populates="billable_items")
+
+class Guidelines(Base):
+    __tablename__ = "guidelines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assessment_id = Column(Integer, ForeignKey("medical_assessments.id"))
+    title = Column(String(500))
+    link = Column(String(1000))
+    relevance_score = Column(Float)
+    content = Column(Text, nullable=True)
+
+    # Relationships
+    medical_assessment = relationship("MedicalAssessment", back_populates="guidelines")
+

@@ -718,33 +718,53 @@ class GPTService:
         """
         Generate a description of what a principal component represents based on its loadings
         """
-        system_prompt = (
-            "You are analyzing a principal component from a PCA analysis of technologies. "
-            "Based on how different comparison axes contribute to this component, "
-            "describe what this component might represent in simple terms.\n\n"
-            f"Context - Problem Statement: {problem_statement}\n\n"
-            "Provide a concise one-sentence description focusing on the strongest contributing factors."
-        )
+        try:
+            system_prompt = (
+                "You are analyzing a principal component from a PCA analysis of technologies. "
+                "Based on how different comparison axes contribute to this component, "
+                "describe what this component might represent in simple terms.\n\n"
+                f"Context - Problem Statement: {problem_statement}\n\n"
+                "Provide a concise one-sentence description focusing on the strongest contributing factors."
+            )
 
-        # Format the loadings into a readable string
-        loadings_str = "\n".join([
-            f"{axis}: {loading:.3f}"
-            for axis, loading in sorted(
-                component_loadings.items(),
+            # Convert and validate loadings
+            numeric_loadings = {}
+            for axis, value in component_loadings.items():
+                try:
+                    numeric_loadings[str(axis)] = float(value)
+                except (ValueError, TypeError):
+                    logger.warning(f"Skipping invalid loading value for axis {axis}: {value}")
+                    continue
+
+            if not numeric_loadings:
+                return "No valid component loadings available"
+
+            # Sort loadings by absolute value
+            sorted_loadings = sorted(
+                numeric_loadings.items(),
                 key=lambda x: abs(x[1]),
                 reverse=True
             )
-        ])
 
-        user_prompt = f"Component loadings:\n{loadings_str}"
+            # Format loadings string
+            loadings_str = "\n".join([
+                f"{axis}: {value:.3f}"
+                for axis, value in sorted_loadings
+            ])
+
+            user_prompt = f"Component loadings:\n{loadings_str}"
+            
+            response = await self.analyze_with_gpt(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.7
+            )
+            
+            return response.get("explanation", "Description not available")
         
-        response = await self.analyze_with_gpt(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            temperature=0.7
-        )
-        
-        return response.get("explanation", "Description not available")
+        except Exception as e:
+            logger.error(f"Error describing PCA component: {str(e)}")
+            return "Error generating component description"
     
 
     async def analyze_cluster(

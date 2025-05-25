@@ -9,7 +9,7 @@ from typing import List, Dict, Tuple
 from sqlalchemy.orm import Session
 from app.models.fee_schedule import FeeSchedule
 from app.models.medical_association import MedicalAssociation
-from app.models.technology import MedicalAssessment, BillableItem
+from app.models.technology import Guidelines, MedicalAssessment, BillableItem
 from app.services.gpt_service import GPTService
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class MedicalAssessmentService:
                 user_prompt=user_prompt,
                 temperature=0.0
             )
-            
+            print(f"GPT Response: {acronym}")
             # Validate acronym exists
             association = self.db.query(MedicalAssociation)\
                 .filter(MedicalAssociation.acronym == acronym.strip())\
@@ -73,33 +73,82 @@ class MedicalAssessmentService:
         medical_association: str,
         technology_name: str,
         problem_statement: str
-    ) -> str:
-        """Fetch and process medical guidelines"""
+    ) -> List[Guidelines]:
+        """Fetch and score medical guidelines from guidelinecentral.com"""
         try:
             # Setup Chrome driver
             driver = webdriver.Chrome()
             
-            # Search for guidelines
-            search_query = f"{medical_association} guidelines {problem_statement}"
-            driver.get(f"https://pubmed.ncbi.nlm.nih.gov/?term={search_query}")
+            # Access guidelinecentral.com with medical association
+            url = f"https://www.guidelinecentral.com/guidelines/{medical_association}"
+            driver.get(url)
+            await asyncio.sleep(2)
             
-            # Wait for content to load
-            await asyncio.sleep(1.5)
+            # Get page content
+            page_source = driver.page_source
+            driver.quit()
             
             # Parse content
-            page_source = driver.page_source
             soup = BeautifulSoup(page_source, 'html.parser')
+            search_results = soup.findAll('div', {'class': 'search-result'})
             
-            # Find relevant guideline content
-            guidelines = ""
-            articles = soup.find_all('div', {'class': 'results-article'})[:3]  # Get top 3 results
+            guidelines_list = []
             
-            for article in articles:
-                if article.find('div', {'class': 'abstract'}):
-                    guidelines += article.find('div', {'class': 'abstract'}).text + "\n\n"
+            # Create prompt for scoring relevance
+            system_prompt = (
+                f"Given this problem statement: {problem_statement} "
+                "rate on a scale of 0 to 1, predict how likely it is to contain "
+                "the current industry standard treatment for this ailment. "
+                "Return only the number. Do not add any additional text or explanation."
+            )
             
-            driver.quit()
-            return guidelines
+            # Process each search result
+            for result in search_results:
+                try:
+                    meta = result.find('div', {'class': 'result-meta'})
+                    title = meta.find('a').text
+                    link = meta.find('a')['href']
+                    
+                    # Score relevance using GPT
+                    score = float(await self.gpt_service._create_chat_completion(
+                        system_prompt=system_prompt,
+                        user_prompt=title,
+                        temperature=0.0
+                    ))
+                    
+                    guideline = Guidelines(
+                        title=title,
+                        link=link,
+                        relevance_score=score
+                    )
+                    guidelines_list.append(guideline)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing guideline result: {e}")
+                    continue
+            
+            # Sort by relevance score
+            guidelines_list.sort(key=lambda x: x.relevance_score, reverse=True)
+            
+            # Get content for top 3 guidelines
+            for guideline in guidelines_list[:3]:
+                try:
+                    driver = webdriver.Chrome()
+                    driver.get(guideline.link)
+                    await asyncio.sleep(1.5)
+                    
+                    soup = BeautifulSoup(driver.page_source, 'html.parser')
+                    driver.quit()
+                    
+                    content_divs = soup.findAll('div', {'class': 'summary-item-body'})
+                    content = " ".join(div.text for div in content_divs)
+                    guideline.content = content
+                    
+                except Exception as e:
+                    logger.error(f"Error fetching guideline content: {e}")
+                    continue
+            
+            return guidelines_list
 
         except Exception as e:
             logger.error(f"Error fetching guidelines: {e}")
@@ -169,7 +218,8 @@ class MedicalAssessmentService:
         """Extract billable procedures and HCPCS codes"""
         system_prompt = (
             "Based on these treatment guidelines, what billable activities/procedures "
-            "would a medical professional prescribe? Return as a short list."
+            "would a medical professional prescribe? Answer in how a medical professional would communicate to their billing people. " 
+            "Return as a short list. Do not restate the question. Counseling is not a billable activity."
         )
         recommendations = await self.gpt_service._create_chat_completion(
             system_prompt=system_prompt,
@@ -195,28 +245,43 @@ class MedicalAssessmentService:
             if medical_association == "No medical associations found":
                 return None
 
+            # Create assessment record
+            assessment = MedicalAssessment(
+                technology_id=technology_id,
+                medical_association=medical_association
+            )
+            self.db.add(assessment)
+            self.db.flush()  # Get ID without committing
+
             # Step 2: Get guidelines
-            guidelines = await self.get_medical_guidelines(
+            guidelines_list = await self.get_medical_guidelines(
                 medical_association,
                 technology_name,
                 problem_statement
             )
+            
+            # Add guidelines to assessment
+            for guideline in guidelines_list:
+                guideline.assessment_id = assessment.id
+                self.db.add(guideline)
+            
+            # Step 3: Extract procedures from top guidelines
+            all_guidelines_text = "\n\n".join(
+                g.content for g in guidelines_list[:3] 
+                if g.content is not None
+            )
+            
+            codes, recommendations = await self.extract_procedures(
+                all_guidelines_text, 
+                problem_statement
+            )
 
-            # Step 3: Extract procedures
-            codes, recommendations = await self.extract_procedures(guidelines, problem_statement)
+            # Update assessment with recommendations
+            assessment.recommendations = recommendations
 
             # Step 4: Calculate fees
             fee_schedule = await self.calculate_fee_schedule(codes)
 
-            # Create assessment record
-            assessment = MedicalAssessment(
-                technology_id=technology_id,
-                medical_association=medical_association,
-                guidelines=guidelines,
-                recommendations=recommendations
-            )
-            self.db.add(assessment)
-            
             # Add billable items
             for item in fee_schedule:
                 billable_item = BillableItem(
