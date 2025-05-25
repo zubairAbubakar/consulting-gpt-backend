@@ -1,6 +1,24 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import patents, technologies
+from app.db.database import SessionLocal
+from app.db.init_data import init_dental_fees, init_medical_associations
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize data
+    db = SessionLocal()
+    try:
+        await init_dental_fees(db)
+        await init_medical_associations(db)
+    finally:
+        db.close()
+    
+    yield  # Server is running and handling requests
+    
+    # Shutdown: Clean up resources if needed
+    pass
 
 app = FastAPI(
     title="Consulting GPT API",

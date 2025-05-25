@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.fee_schedule import FeeSchedule
 from app.models.technology import (
     Technology, 
     ComparisonAxis, 
@@ -27,4 +28,5 @@ __all__ = [
     "ClusterResult",
     "ClusterMember",
     "Recommendation",
+    "FeeSchedule"
 ]

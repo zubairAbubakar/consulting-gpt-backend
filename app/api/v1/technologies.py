@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session, joinedload
 from app.dependencies import get_db
+from app.models.dental_fee_schedule import DentalFeeSchedule
 from app.schemas.cluster import ClusterDetailRead
 from app.schemas.market_analysis import MarketAnalysisRead
 from app.schemas.pca_component import PCAResultRead
@@ -10,6 +11,7 @@ from app.schemas.recommendation import RecommendationRequest, RecommendationResp
 from app.schemas.related_paper import RelatedPaperRead
 from app.schemas.visualization import VisualizationParams
 from app.services.gpt_service import GPTService
+from app.services.medical_assessment_service import MedicalAssessmentService, MedicalService
 from app.services.recommendation_service import RecommendationService
 from app.services.technology_service import TechnologyService
 from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper, ClusterResult, ClusterMember, Technology   
@@ -513,6 +515,82 @@ async def generate_recommendations(
     )
     
     return recommendations
+
+
+@router.post("/{technology_id}/medical-assessment")
+async def create_medical_assessment(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """Generate medical assessment including fee calculations"""
+    
+    # Get technology details
+    technology = db.query(Technology)\
+        .filter(Technology.id == technology_id)\
+        .first()
+    
+    if not technology:
+        raise HTTPException(status_code=404, detail="Technology not found")
+
+    medical_service = MedicalService(GPTService(db), db)
+    
+    assessment = await medical_service.create_medical_assessment(
+        technology_id=technology_id,
+        problem_statement=technology.problem_statement,
+        technology_name=technology.name
+    )
+    
+    if not assessment:
+        raise HTTPException(
+            status_code=400,
+            detail="No relevant medical associations found"
+        )
+    
+    return assessment
+
+@router.get("/classify-association")
+async def classify_medical_association(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """Classify problem statement to relevant medical association"""
+      # Get technology details
+    technology = db.query(Technology)\
+        .filter(Technology.id == technology_id)\
+        .first()
+    
+    if not technology.problem_statement:
+        raise HTTPException(status_code=404, detail="Problem statement not found")
+    
+    medical_assessment_service = MedicalAssessmentService(GPTService(db), db)
+    
+    acronym = await medical_assessment_service.classify_medical_association(technology.problem_statement)
+    
+    if acronym == "No medical associations found":
+        raise HTTPException(
+            status_code=404,
+            detail="No relevant medical association found"
+        )
+        
+    return {"acronym": acronym}
+
+@router.get("/dental/{code}")
+async def get_dental_fee(
+    code: str,
+    db: Session = Depends(get_db)
+):
+    """Get dental fee for a specific code"""
+    fee = db.query(DentalFeeSchedule)\
+        .filter(DentalFeeSchedule.code == code)\
+        .first()
+        
+    if not fee:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Fee not found for code {code}"
+        )
+        
+    return fee
 
 # Background task functions
 async def complete_technology_setup_background(technology_id: int, db: Session):
