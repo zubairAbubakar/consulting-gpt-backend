@@ -23,7 +23,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Consulting GPT API",
     description="Backend API for Consulting GPT application",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configure CORS

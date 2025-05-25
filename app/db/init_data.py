@@ -25,29 +25,41 @@ async def init_dental_fees(db: Session) -> None:
             logger.info("Dental fee schedule already populated")
             return {"message": "Dental fee schedule already exists"}
 
-        # Get default path if none provided
-        if not csv_path:
-            csv_path = Path(__file__).parent.parent.parent / "data" / "dental_fee_schedule.csv"
+        csv_path = Path(__file__).parent.parent.parent / "data" / "dental_fee_schedule.csv"
 
         if not Path(csv_path).exists():
             raise FileNotFoundError(f"Dental fee schedule CSV not found at {csv_path}")
 
-        # Read CSV file
+        # Read CSV file with specific numeric handling
         df = pd.read_csv(csv_path)
+        
+        # Clean numeric columns by removing commas and converting to float
+        numeric_columns = [
+            'Average Fee', 
+            'Standard\nDeviation\n$',
+            '10th\n$', 
+            '25th\n$', 
+            'Median\n50th\n$',
+            '75th\n$',
+            '90th\n$'
+        ]
+        
+        for col in numeric_columns:
+            df[col] = df[col].astype(str).str.replace(',', '').astype(float)
         
         # Process each row
         for _, row in df.iterrows():
             fee_item = DentalFeeSchedule(
                 code=row['Code'],
                 description=row['Description of Service'],
-                average_fee=row['Average Fee'],
-                std_deviation=row['Standard\nDeviation\n$'],
-                percentile_10th=row['10th\n$'],
-                percentile_25th=row['25th\n$'],
-                percentile_50th=row['Median\n50th\n$'],
-                percentile_75th=row['75th\n$'],
-                percentile_90th=row['90th\n$'],
-                num_responses=row['Number of\nResponses']
+                average_fee=float(row['Average Fee']),
+                std_deviation=float(row['Standard\nDeviation\n$']),
+                percentile_10th=float(row['10th\n$']),
+                percentile_25th=float(row['25th\n$']),
+                percentile_50th=float(row['Median\n50th\n$']),
+                percentile_75th=float(row['75th\n$']),
+                percentile_90th=float(row['90th\n$']),
+                num_responses=int(row['Number of\nResponses'])
             )
             db.add(fee_item)
 

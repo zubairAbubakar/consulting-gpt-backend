@@ -11,7 +11,7 @@ from app.schemas.recommendation import RecommendationRequest, RecommendationResp
 from app.schemas.related_paper import RelatedPaperRead
 from app.schemas.visualization import VisualizationParams
 from app.services.gpt_service import GPTService
-from app.services.medical_assessment_service import MedicalAssessmentService, MedicalService
+from app.services.medical_assessment_service import MedicalAssessmentService
 from app.services.recommendation_service import RecommendationService
 from app.services.technology_service import TechnologyService
 from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper, ClusterResult, ClusterMember, Technology   
@@ -532,7 +532,7 @@ async def create_medical_assessment(
     if not technology:
         raise HTTPException(status_code=404, detail="Technology not found")
 
-    medical_service = MedicalService(GPTService(db), db)
+    medical_service = MedicalAssessmentService(GPTService(db), db)
     
     assessment = await medical_service.create_medical_assessment(
         technology_id=technology_id,

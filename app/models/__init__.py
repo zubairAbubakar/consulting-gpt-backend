@@ -1,5 +1,7 @@
 from app.models.base import Base
 from app.models.fee_schedule import FeeSchedule
+from app.models.dental_fee_schedule import DentalFeeSchedule
+from app.models.medical_association import MedicalAssociation
 from app.models.technology import (
     Technology, 
     ComparisonAxis, 
@@ -11,7 +13,9 @@ from app.models.technology import (
     PCAResult, 
     ClusterResult, 
     ClusterMember, 
-    Recommendation
+    Recommendation,
+    MedicalAssessment,
+    BillableItem
     )
 
 
@@ -28,5 +32,7 @@ __all__ = [
     "ClusterResult",
     "ClusterMember",
     "Recommendation",
-    "FeeSchedule"
+    "FeeSchedule",
+    "MedicalAssessment",
+    "BillableItem",
 ]
