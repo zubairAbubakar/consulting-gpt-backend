@@ -3,13 +3,28 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session, joinedload
 from app.dependencies import get_db
+from app.models.dental_fee_schedule import DentalFeeSchedule
 from app.schemas.cluster import ClusterDetailRead
 from app.schemas.market_analysis import MarketAnalysisRead
 from app.schemas.pca_component import PCAResultRead
+from app.schemas.recommendation import RecommendationRequest, RecommendationResponse
 from app.schemas.related_paper import RelatedPaperRead
 from app.schemas.visualization import VisualizationParams
+from app.services.gpt_service import GPTService
+from app.services.medical_assessment_service import MedicalAssessmentService
+from app.services.recommendation_service import RecommendationService
 from app.services.technology_service import TechnologyService
-from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper, ClusterResult, ClusterMember   
+from app.models.technology import ( 
+    MarketAnalysis, 
+    PCAResult, 
+    PatentSearch, 
+    RelatedPaper, 
+    ClusterResult, 
+    ClusterMember, 
+    Technology,
+    MedicalAssessment,
+    BillableItem 
+)
 from app.schemas.technology import (
     ComparisonAxisRead,
     TechnologyCreate,
@@ -267,9 +282,9 @@ async def create_pca_analysis(
     
     # Generate component descriptions in background
     background_tasks.add_task(
-        service.describe_pca_components,
-        pca_result,
-        technology
+        service.describe_pca_components_background,
+        technology_id,
+        pca_result.id
     )
     
     return pca_result
@@ -303,72 +318,6 @@ async def get_pca_results(
         # Return empty list instead of throwing an error
         return []
 
-@router.get("/{technology_id}/visualization")
-async def get_visualization_data(
-    technology_id: int,
-    show_clusters: bool = Query(False, description="Toggle cluster visualization"),
-    viz_type: str = Query("pca", description="Visualization type: pca, raw, or combined"),
-    selected_axes: Optional[List[str]] = Query(None, description="List of axes to show"),
-    show_labels: bool = Query(True, description="Show technology labels"),
-    show_annotations: bool = Query(True, description="Show additional annotations"),
-    db: Session = Depends(get_db)
-):
-    """
-    Get enhanced visualization data with interactive features
-    """
-    viz_service = VisualizationService()
-    
-    # Get all required data
-    pca_result = db.query(PCAResult)\
-        .filter(PCAResult.technology_id == technology_id)\
-        .order_by(PCAResult.id.desc())\
-        .first()
-    
-    cluster_results = None
-    if show_clusters:
-        cluster_results = db.query(ClusterResult)\
-            .options(joinedload(ClusterResult.cluster_members)
-                    .joinedload(ClusterMember.related_technology))\
-            .filter(ClusterResult.technology_id == technology_id)\
-            .all()
-    
-    market_analyses = None
-    if viz_type in ["raw", "combined"]:
-        market_analyses = db.query(MarketAnalysis)\
-            .options(joinedload(MarketAnalysis.comparison_axis))\
-            .filter(MarketAnalysis.technology_id == technology_id)\
-            .all()
-    
-    return viz_service.prepare_visualization_data(
-        pca_result=pca_result,
-        market_analyses=market_analyses,
-        cluster_results=cluster_results,
-        show_clusters=show_clusters,
-        selected_axes=selected_axes,
-        show_labels=show_labels,
-        show_annotations=show_annotations
-    )
-
-@router.get("/{technology_id}/visualization/silhouette")
-async def get_silhouette_analysis(
-    technology_id: int,
-    db: Session = Depends(get_db)
-):
-    """Get silhouette analysis for clustering"""
-    viz_service = VisualizationService()
-    
-    pca_result = db.query(PCAResult)\
-        .filter(PCAResult.technology_id == technology_id)\
-        .order_by(PCAResult.id.desc())\
-        .first()
-    
-    if not pca_result:
-        raise HTTPException(
-            status_code=404,
-            detail="No PCA results found"
-        )
-        
-    return viz_service.prepare_silhouette_analysis(pca_result)
 
 @router.post("/{technology_id}/clustering")
 async def create_clustering(
@@ -457,6 +406,234 @@ async def get_cluster_details(
         "created_at": cluster.created_at,
         "members": members
     }
+
+
+@router.get("/{technology_id}/visualization")
+async def get_visualization_data(
+    technology_id: int,
+    show_clusters: bool = Query(False, description="Toggle cluster visualization"),
+    viz_type: str = Query("pca", description="Visualization type: pca, raw, or combined"),
+    selected_axes: Optional[List[str]] = Query(None, description="List of axes to show"),
+    show_labels: bool = Query(True, description="Show technology labels"),
+    show_annotations: bool = Query(True, description="Show additional annotations"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get enhanced visualization data with interactive features
+    """
+    viz_service = VisualizationService()
+    
+    # Get all required data
+    pca_result = db.query(PCAResult)\
+        .filter(PCAResult.technology_id == technology_id)\
+        .order_by(PCAResult.id.desc())\
+        .first()
+    
+    cluster_results = None
+    if show_clusters:
+        cluster_results = db.query(ClusterResult)\
+            .options(joinedload(ClusterResult.cluster_members)
+                    .joinedload(ClusterMember.related_technology))\
+            .filter(ClusterResult.technology_id == technology_id)\
+            .all()
+    
+    market_analyses = None
+    if viz_type in ["raw", "combined"]:
+        market_analyses = db.query(MarketAnalysis)\
+            .options(joinedload(MarketAnalysis.comparison_axis))\
+            .filter(MarketAnalysis.technology_id == technology_id)\
+            .all()
+    
+    return viz_service.prepare_visualization_data(
+        pca_result=pca_result,
+        market_analyses=market_analyses,
+        cluster_results=cluster_results,
+        show_clusters=show_clusters,
+        selected_axes=selected_axes,
+        show_labels=show_labels,
+        show_annotations=show_annotations
+    )
+
+@router.get("/{technology_id}/visualization/silhouette")
+async def get_silhouette_analysis(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get silhouette analysis for clustering"""
+    viz_service = VisualizationService()
+    
+    pca_result = db.query(PCAResult)\
+        .filter(PCAResult.technology_id == technology_id)\
+        .order_by(PCAResult.id.desc())\
+        .first()
+    
+    if not pca_result:
+        raise HTTPException(
+            status_code=404,
+            detail="No PCA results found"
+        )
+        
+    return viz_service.prepare_silhouette_analysis(pca_result)
+
+@router.post(
+    "/{technology_id}/recommendations",
+    response_model=RecommendationResponse
+)
+async def generate_recommendations(
+    technology_id: int,
+    request: RecommendationRequest,
+    db: Session = Depends(get_db)
+):
+    """Generate commercialization recommendations"""
+    
+    # Get technology details
+    technology = db.query(Technology)\
+        .filter(Technology.id == technology_id)\
+        .first()
+    
+    if not technology:
+        raise HTTPException(status_code=404, detail="Technology not found")
+        
+    # Get market analysis data
+    market_analyses = db.query(MarketAnalysis)\
+        .options(joinedload(MarketAnalysis.comparison_axis))\
+        .filter(MarketAnalysis.technology_id == technology_id)\
+        .all()
+        
+    # Format market data
+    market_data = {
+        "axes": [
+            {
+                "name": analysis.comparison_axis.axis_name,
+                "score": analysis.score,
+                "technology": analysis.related_technology.name
+            }
+            for analysis in market_analyses
+        ]
+    }
+    
+    # Initialize services with db session
+    gpt_service = GPTService(db)
+    recommendation_service = RecommendationService(gpt_service, db)
+    
+    recommendations = await recommendation_service.generate_recommendations(
+        technology_id=technology_id,
+        name=technology.name,
+        problem_statement=technology.problem_statement,
+        abstract=technology.abstract,
+        current_stage=request.current_stage,
+        market_data=market_data
+    )
+    
+    return recommendations
+
+
+@router.post("/{technology_id}/medical-assessment")
+async def create_medical_assessment(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """Generate medical assessment including fee calculations"""
+    
+    # Get technology details
+    technology = db.query(Technology)\
+        .filter(Technology.id == technology_id)\
+        .first()
+    
+    if not technology:
+        raise HTTPException(status_code=404, detail="Technology not found")
+
+    medical_service = MedicalAssessmentService(GPTService(db), db)
+    
+    assessment = await medical_service.create_medical_assessment(
+        technology_id=technology_id,
+        problem_statement=technology.problem_statement,
+        technology_name=technology.name
+    )
+    
+    if not assessment:
+        raise HTTPException(
+            status_code=400,
+            detail="No relevant medical associations found"
+        )
+    
+    return assessment
+
+
+@router.get("/{technology_id}/billable-items")
+async def get_billable_items(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get billable items for a technology's medical assessment"""
+    
+    # First get the medical assessment for this technology
+    assessment = db.query(MedicalAssessment)\
+        .filter(MedicalAssessment.technology_id == technology_id)\
+        .order_by(MedicalAssessment.created_at.desc())\
+        .first()
+    
+    if not assessment:
+        raise HTTPException(
+            status_code=404,
+            detail="No medical assessment found for this technology"
+        )
+    
+    # Get the billable items
+    billable_items = db.query(BillableItem)\
+        .filter(BillableItem.assessment_id == assessment.id)\
+        .all()
+    
+    return {
+        "assessment_id": assessment.id,
+        "medical_association": assessment.medical_association,
+        "billable_items": billable_items,
+        "total_fee": sum(item.fee for item in billable_items if item.fee)
+    }
+
+@router.get("/{technology_id}/classify-association")
+async def classify_medical_association(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """Classify problem statement to relevant medical association"""
+      # Get technology details
+    technology = db.query(Technology)\
+        .filter(Technology.id == technology_id)\
+        .first()
+    
+    if not technology.problem_statement:
+        raise HTTPException(status_code=404, detail="Problem statement not found")
+    
+    medical_assessment_service = MedicalAssessmentService(GPTService(db), db)
+    
+    acronym = await medical_assessment_service.classify_medical_association(technology.problem_statement)
+    
+    if acronym == "No medical associations found":
+        raise HTTPException(
+            status_code=404,
+            detail="No relevant medical association found"
+        )
+        
+    return {"acronym": acronym}
+
+@router.get("/dental/{code}")
+async def get_dental_fee(
+    code: str,
+    db: Session = Depends(get_db)
+):
+    """Get dental fee for a specific code"""
+    fee = db.query(DentalFeeSchedule)\
+        .filter(DentalFeeSchedule.code == code)\
+        .first()
+        
+    if not fee:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Fee not found for code {code}"
+        )
+        
+    return fee
 
 # Background task functions
 async def complete_technology_setup_background(technology_id: int, db: Session):

@@ -10,6 +10,7 @@ import json
 import asyncio
 import logging
 
+from app.db.database import SessionLocal
 from app.models.technology import ClusterMember, ClusterResult, MarketAnalysis, PCAResult, Technology, RelatedTechnology, RelatedPaper, PatentSearch, PatentResult, ComparisonAxis
 from app.schemas.technology import TechnologyCreate, TechnologyRead, RelatedTechnologyRead
 from app.services.gpt_service import GPTService
@@ -529,6 +530,26 @@ class TechnologyService:
         except Exception as e:
             logger.error(f"Error describing PCA components: {e}")
 
+    # Add new background task function:
+    async def describe_pca_components_background(self, technology_id: int, pca_result_id: int):
+        """Background task to describe PCA components with its own db session"""
+        db = SessionLocal()
+        try:
+            # Get fresh copies of objects with new session
+            technology = db.query(Technology).get(technology_id)
+            pca_result = db.query(PCAResult).get(pca_result_id)
+            
+            if not technology or not pca_result:
+                logger.error("Could not find technology or PCA result for description")
+                return
+                
+            service = TechnologyService(db)
+            await service.describe_pca_components(pca_result, technology)
+            
+        except Exception as e:
+            logger.error(f"Error describing PCA components: {e}")
+        finally:
+            db.close()
 
     async def perform_clustering(self, technology_id: int) -> bool:
         """

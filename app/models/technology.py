@@ -21,6 +21,8 @@ class Technology(Base):
     related_papers = relationship("RelatedPaper", back_populates="technology")
     pca_results = relationship("PCAResult", back_populates="technology")
     cluster_results = relationship("ClusterResult", back_populates="technology")
+    recommendations = relationship("Recommendation", back_populates="technology")
+    medical_assessments = relationship("MedicalAssessment", back_populates="technology")
 
 class ComparisonAxis(Base):
     __tablename__ = "comparison_axis"
@@ -166,3 +168,57 @@ class ClusterMember(Base):
         back_populates="cluster_memberships",
         foreign_keys=[technology_id]
     )
+
+class Recommendation(Base):
+    __tablename__ = "recommendations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    technology_id = Column(Integer, ForeignKey("technology.id"))
+    general_assessment = Column(Text)
+    logistical_showstoppers = Column(Text)
+    market_showstoppers = Column(Text)
+    current_stage = Column(String(255))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    technology = relationship("Technology", back_populates="recommendations")
+
+class MedicalAssessment(Base):
+    __tablename__ = "medical_assessments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    technology_id = Column(Integer, ForeignKey("technology.id"))
+    medical_association = Column(String(255))
+    guidelines = Column(Text)
+    recommendations = Column(Text)
+    
+    # Relationships
+    technology = relationship("Technology", back_populates="medical_assessments")
+    billable_items = relationship("BillableItem", back_populates="medical_assessment")
+    guidelines = relationship("Guidelines", back_populates="medical_assessment")
+
+class BillableItem(Base):
+    __tablename__ = "billable_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assessment_id = Column(Integer, ForeignKey("medical_assessments.id"))
+    hcpcs_code = Column(String(50))
+    description = Column(Text)
+    fee = Column(Float)
+    
+    # Relationships
+    medical_assessment = relationship("MedicalAssessment", back_populates="billable_items")
+
+class Guidelines(Base):
+    __tablename__ = "guidelines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assessment_id = Column(Integer, ForeignKey("medical_assessments.id"))
+    title = Column(String(500))
+    link = Column(String(1000))
+    relevance_score = Column(Float)
+    content = Column(Text, nullable=True)
+
+    # Relationships
+    medical_assessment = relationship("MedicalAssessment", back_populates="guidelines")
+

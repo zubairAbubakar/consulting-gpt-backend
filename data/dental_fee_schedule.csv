@@ -1,0 +1,267 @@
+﻿Code,Description of Service,Average Fee,"Standard
+Deviation
+$","10th
+$","25th
+$","Median
+50th
+$","75th
+$","80th
+$","85th
+$","90th
+$","95th
+$","Number of
+Responses"
+D0120,"periodic oral evaluation - established
+patient",52.73,17.94,33,40,50,65,69,70,79,85,81
+D0140,limited oral evaluation - problem focused,70.79,26.07,40,55,67,83,88,98,105,125,79
+D0145,"oral evaluation for a patient under three
+years of age and counseling with primary
+caregiver",64.3,28.85,35,40,60,80,90,96,123,125,37
+D0150,"comprehensive oral evaluation - new or
+established patient",83.46,30,45,60,79,100,114,120,123,145,81
+D0160,"detailed and extensive oral evaluation -problem focused, by report",123.42,61.6,60,67,120,173,175,186,199,222,49
+D0170,"re-evaluation - limited, problem focused
+(established patient; not post-operative
+visit)",67.37,28.81,40,44,66,80,91,100,100,125,49
+D0171,re-evaluation – post-operative office visit,18.58,29.75,0,0,0,40,44,44,65,89,38
+D0180,comprehensive periodontal evaluation -new or established patient,102.2,25.89,75,80,100,125,125,125,135,139,47
+D0210,"intraoral - complete series of radiographic
+images",142.02,32.49,100,115,133,165,175,179,190,200,76
+D0220,"intraoral - periapical first radiographic
+image",27.68,8.44,16,22,26,32,35,35,39,45,83
+D0230,"intraoral - periapical each additional
+radiographic image",21.91,7.33,15,16,20,27,29,30,30,34,81
+D0272,bitewings - two radiographic images,47.22,10.91,35,40,45,52,55,55,60,70,70
+D0273,bitewings - three radiographic images,56.58,13.51,40,45,56,63,65,66,75,82,45
+D0274,bitewings - four radiographic images,68.8,15.25,50,57,66,79,80,85,86,100,70
+D0277,"vertical bitewings - 7 to 8 radiographic
+images",96.87,19.86,70,80,100,110,110,124,126,127,31
+D0330,panoramic radiographic image,127.66,28.79,95,100,125,144,150,158,175,190,47
+D0470,diagnostic casts,121.65,41.21,75,100,115,136,150,156,195,200,57
+D1110,prophylaxis - adult,98.01,26.58,67,75,92,116,125,130,137,148,81
+D1120,prophylaxis - child,76.3,20.33,55,60,74,85,88,99,110,120,81
+D1206,topical application of fluoride varnish,45.58,15.67,29,30,45,52,56,60,65,75,67
+D1208,"topical application of fluoride – excluding
+varnish",42.75,14.21,25,30,44,51,52,55,65,75,54
+D1330,oral hygiene instructions,26.06,27.19,0,0,30,47,59,59,62,65,44
+D1351,sealant - per tooth,57.18,16.58,40,43,55,67,71,75,75,95,72
+D1510,"space maintainer - fixed, unilateral – per
+quadrant",315.09,72.3,250,250,300,375,375,406,422,440,34
+D2140,"amalgam - one surface, primary or
+permanent",136.34,38.89,92,100,125,160,168,188,200,200,62
+D2150,"amalgam - two surfaces, primary or
+permanent",172.19,47.85,120,130,167,200,212,225,250,250,63
+D2160,"amalgam - three surfaces, primary or
+permanent",210.67,60.33,145,155,200,253,265,271,295,302,66
+D2161,"amalgam - four or more surfaces, primary
+or permanent",248.29,73.07,168,180,250,297,300,325,350,350,64
+D2330,"resin-based composite - one surface,
+anterior",166.35,42.52,119,125,167,200,200,200,215,235,74
+D2331,"resin-based composite - two surfaces,
+anterior",201.97,47.58,146,168,199,229,238,250,255,293,76
+D2332,"resin-based composite - three surfaces,
+anterior",252.66,61.17,170,208,250,295,300,300,313,380,75
+D2335,"resin-based composite - four or more
+surfaces or involving incisal angle
+(anterior)",298.47,81.72,190,247,290,350,350,373,400,440,74
+D2390,"resin-based composite crown, anterior",402.8,147.59,222,281,400,499,555,600,600,600,35
+D2391,"resin-based composite - one surface,
+posterior",183.79,40.89,135,150,184,210,221,225,225,254,71
+D2392,"resin-based composite - two surfaces,
+posterior",228.91,48.04,177,190,225,250,260,272,290,323,72
+D2393,"resin-based composite - three surfaces,
+posterior",286.51,62.28,214,235,283,320,325,360,370,391,69
+D2394,"resin-based composite - four or more
+surfaces, posterior",335.84,76.52,248,274,342,385,405,410,425,457,66
+D2620,inlay - porcelain/ceramic - two surfaces,"1,003.20",307.57,630,700,989,"1,200","1,250","1,300","1,440","1,645",32
+D2642,onlay - porcelain/ceramic - two surfaces,"1,068.52",255.46,750,880,995,"1,200","1,325","1,460","1,467","1,500",36
+D2643,onlay - porcelain/ceramic - three surfaces,"1,130.75",229.07,840,981,"1,133","1,259","1,335","1,460","1,467","1,571",39
+D2644,"onlay - porcelain/ceramic - four or more
+surfaces","1,251.66",234.3,868,"1,150","1,200","1,440","1,460","1,550","1,614","1,645",36
+D2740,crown - porcelain/ceramic,"1,227.32",250.4,950,"1,015","1,200","1,350","1,440","1,500","1,586","1,665",73
+D2750,"crown - porcelain fused to high noble
+metal","1,179.18",225.38,900,995,"1,137","1,350","1,400","1,449","1,500","1,625",67
+D2751,"crown - porcelain fused to predominantly
+base metal","1,101.94",210.51,850,928,"1,055","1,168","1,275","1,315","1,500","1,500",39
+D2752,crown - porcelain fused to noble metal,"1,160.98",246.83,860,950,"1,150","1,300","1,350","1,440","1,500","1,590",56
+D2790,crown - full cast high noble metal,"1,246.03",311.7,973,990,"1,137","1,424","1,500","1,503","1,757","2,000",47
+D2799,"provisional crown– further treatment or
+completion of diagnosis necessary prior to
+final impression",326.04,168.55,62,200,350,483,491,500,525,600,43
+D2920,re-cement or re-bond crown,109.71,34.1,75,80,100,129,138,148,150,185,70
+D2930,prefabricated stainless steel crown -primary tooth,297.6,79.37,228,241,276,322,340,350,410,500,31
+D2940,protective restoration,125.26,46.6,75,90,113,150,165,181,200,200,46
+D2950,"core buildup, including any pins when
+required",282.07,73.39,200,235,260,325,340,350,395,425,66
+D2952,"post and core in addition to crown,
+indirectly fabricated",403.19,109.39,250,335,395,475,485,499,534,580,52
+D2954,"prefabricated post and core in addition to
+crown",346.22,82.96,225,272,350,395,395,425,450,525,68
+D2961,labial veneer (resin laminate) - laboratory,"1,051.31",292.6,700,800,"1,036","1,200","1,235","1,460","1,500","1,500",33
+D2962,labial veneer (porcelain laminate) -laboratory,"1,254.04",251.02,990,"1,020","1,200","1,464","1,500","1,500","1,625","1,665",59
+D2980,"crown repair necessitated by restorative
+material failure",264.63,100.39,150,157,250,326,350,371,402,425,42
+D3110,"pulp cap - direct (excluding final
+restoration)",91.17,43.58,48,66,80,100,118,130,183,200,51
+D3120,"pulp cap - indirect (excluding final
+restoration)",83.62,42.81,42,50,80,95,105,120,137,200,48
+D3220,"therapeutic pulpotomy (excluding final
+restoration) - removal of pulp coronal to
+the dentinocemental junction and
+application of medicament",188.98,66.43,110,145,200,229,249,250,277,300,60
+D3221,"pulpal debridement, primary and
+permanent teeth",185.83,89.03,95,125,191,256,273,278,285,324,41
+D3310,"endodontic therapy, anterior tooth
+(excluding final restoration)",780.94,185.48,576,647,750,850,906,975,"1,060","1,200",69
+D3320,"endodontic therapy, premolar tooth
+(excluding final restoration)",885.56,183.81,700,725,850,970,995,"1,080","1,100","1,225",68
+D3330,"endodontic therapy, molar tooth
+(excluding final restoration)","1,064.72",209.82,800,925,"1,000","1,150","1,200","1,257","1,350","1,500",68
+D3332,"incomplete endodontic therapy;
+inoperable, unrestorable or fractured tooth",310.26,215.62,0,125,382,460,491,500,556,578,30
+D3346,"retreatment of previous root canal therapy
+- anterior",912.62,202.95,604,751,900,"1,073","1,100","1,128","1,200","1,225",37
+D3347,"retreatment of previous root canal therapy
+- premolar","1,070.14",234.69,730,953,"1,000","1,245","1,280","1,300","1,400","1,518",33
+D3348,"retreatment of previous root canal therapy
+- molar","1,230.96",228.39,901,"1,050","1,200","1,381","1,400","1,450","1,500","1,528",32
+D4210,"gingivectomy or gingivoplasty - four or
+more contiguous teeth or tooth bounded
+spaces per quadrant",651.35,219.75,400,500,600,740,782,875,897,"1,200",43
+D4211,"gingivectomy or gingivoplasty - one to
+three contiguous teeth or tooth bounded
+spaces per quadrant",303.02,117.61,160,215,297,359,361,400,425,500,48
+D4212,"gingivectomy or gingivoplasty to allow
+access for restorative procedure, per
+tooth",231.42,142.75,100,100,181,330,403,425,475,500,31
+D4249,clinical crown lengthening – hard tissue,710.66,257.02,400,436,735,852,905,950,950,"1,061",34
+D4321,provisional splinting - extracoronal,445.51,157.18,225,350,425,565,600,600,654,715,36
+D4341,"periodontal scaling and root planing - four
+or more teeth per quadrant",261.3,60.54,180,225,247,300,300,325,354,400,58
+D4342,"periodontal scaling and root planing - one
+to three teeth per quadrant",199.51,59.89,125,160,195,235,249,250,275,354,52
+D4355,"full mouth debridement to enable a
+comprehensive oral evaluation and
+diagnosis on a subsequent visit",191.57,57.82,125,150,184,231,244,250,299,300,56
+D4381,"localized delivery of antimicrobial agents
+via a controlled release vehicle into
+diseased crevicular tissue, per tooth",106.55,56.88,45,57,97,150,156,173,195,200,51
+D4910,periodontal maintenance,142.72,34.15,100,119,139,160,173,175,187,198,56
+D5110,complete denture - maxillary,"1,744.08",517.61,"1,150","1,350","1,675","2,000","2,199","2,250","2,573","2,599",78
+D5120,complete denture - mandibular,"1,762.10",542.34,"1,150","1,350","1,675","2,000","2,199","2,350","2,573","2,599",79
+D5130,immediate denture - maxillary,"1,902.11",515.31,"1,307","1,550","1,800","2,200","2,280","2,495","2,599","2,773",72
+D5140,immediate denture - mandibular,"1,889.22",512.59,"1,300","1,550","1,800","2,200","2,280","2,495","2,599","2,773",72
+D5211,"maxillary partial denture – resin base
+(including, retentive/clasping materials,
+rests, and teeth)","1,488.07",588.15,750,"1,025","1,500","1,800","2,147","2,200","2,475","2,599",65
+D5212,"mandibular partial denture – resin base
+(including, retentive/clasping materials,
+rests, and teeth)","1,496.89",584.37,750,"1,025","1,500","1,800","2,147","2,200","2,475","2,599",66
+D5213,"maxillary partial denture - cast metal
+framework with resin denture bases
+(including retentive/clasping materials,
+rests and teeth)","1,882.61",509.44,"1,307","1,500","1,764","2,200","2,287","2,400","2,500","2,599",74
+D5214,"mandibular partial denture - cast metal
+framework with resin denture bases
+(including retentive/clasping materials,
+rests and teeth)","1,882.10",511.95,"1,307","1,500","1,759","2,200","2,287","2,400","2,500","2,599",73
+D5221,"immediate maxillary partial denture - resin
+base (including retentive/clasping
+materials, rests and teeth)","1,490.89",696.82,595,850,"1,400","2,100","2,250","2,500","2,500","2,599",35
+D5222,"immediate mandibular partial denture -resin base (including retentive/clasping
+materials, rests and teeth)","1,501.11",706.13,595,850,"1,500","2,114","2,250","2,500","2,500","2,599",34
+D5225,"maxillary partial denture - flexible base
+(including any clasps, rests and teeth)","1,559.28",513.53,975,"1,150","1,500","1,850","1,900","2,142","2,500","2,599",57
+D5226,"mandibular partial denture - flexible base
+(including any clasps, rests and teeth)","1,556.61",506.09,975,"1,150","1,500","1,850","1,900","2,142","2,250","2,599",57
+D5520,replace missing or broken teeth -complete denture (each tooth),172.26,50.43,100,140,167,205,212,235,249,253,60
+D5640,replace broken teeth - per tooth,163.87,52.26,95,110,163,200,212,216,235,250,65
+D5650,add tooth to existing partial denture,205.11,59.42,140,150,198,249,250,262,285,300,66
+D5660,"add clasp to existing partial denture - per
+tooth",236.06,76.96,150,180,205,295,300,315,325,385,58
+D5710,rebase complete maxillary denture,575.44,178.33,350,450,551,666,738,780,900,900,42
+D5711,rebase complete mandibular denture,569.87,190.32,325,375,522,738,747,800,900,900,43
+D5720,rebase maxillary partial denture,525.68,163.01,350,365,500,612,648,714,731,800,39
+D5721,rebase mandibular partial denture,525.75,161.05,350,365,500,643,700,740,745,804,40
+D5730,"reline complete maxillary denture
+(chairside)",323.13,126.44,165,225,330,421,425,474,500,510,64
+D5731,"reline complete mandibular denture
+(chairside)",326.72,123.57,170,250,330,395,425,475,500,510,63
+D5750,"reline complete maxillary denture
+(laboratory)",421.41,183.14,180,300,400,540,575,599,620,800,71
+D5751,"reline complete mandibular denture
+(laboratory)",409.34,202.57,175,275,400,540,575,600,626,800,70
+D6010,"surgical placement of implant body:
+endosteal implant","1,965.74",500.18,"1,500","1,700","1,808","2,126","2,300","2,500","2,550","2,551",34
+D6056,"prefabricated abutment – includes
+modification and placement",723.17,193.62,420,600,700,825,880,900,990,990,41
+D6057,"custom fabricated abutment – includes
+placement",918.47,254.62,650,796,899,990,"1,000","1,036","1,199","1,470",56
+D6059,"abutment supported porcelain fused to
+metal crown (high noble metal)","1,527.85",422.23,995,"1,244","1,500","1,700","1,775","1,900","2,000","2,599",58
+D6066,"implant supported crown - porcelain fused
+to high noble alloys","1,580.26",436.38,"1,050","1,200","1,500","1,775","1,895","1,950","2,250","2,599",51
+D6069,"abutment supported retainer for porcelain
+fused to metal FPD (high noble metal)","1,536.96",486.59,995,"1,200","1,426","1,750","1,900","2,250","2,500","2,599",37
+D6080,"implant maintenance procedures when
+prostheses are removed and reinserted,
+including cleansing of prostheses and
+abutments",178.31,124.86,0,95,166,261,325,344,372,400,33
+D6210,pontic - cast high noble metal,"1,128.48",250.11,845,959,"1,100","1,200","1,275","1,366","1,460","1,600",41
+D6240,"pontic - porcelain fused to high noble
+metal","1,175.74",204.16,915,990,"1,200","1,300","1,300","1,400","1,460","1,600",58
+D6241,"pontic - porcelain fused to predominantly
+base metal","1,118.60",208.86,850,920,"1,100","1,250","1,280","1,303","1,460","1,475",39
+D6245,pontic - porcelain/ceramic,"1,185.38",261.21,900,990,"1,200","1,275","1,350","1,440","1,500","1,625",58
+D6545,"retainer - cast metal for resin bonded
+fixed prosthesis",619.21,334.43,300,301,525,900,919,"1,061","1,200","1,200",34
+D6750,"retainer crown - porcelain fused to high
+noble metal","1,213.22",225.25,990,995,"1,200","1,308","1,413","1,460","1,600","1,645",50
+D6751,"retainer crown - porcelain fused to
+predominantly base metal","1,113.49",160.79,910,959,"1,100","1,200","1,250","1,301","1,315","1,411",34
+D6790,retainer crown - full cast high noble metal,"1,153.41",151.01,963,"1,030","1,150","1,275","1,280","1,308","1,386","1,400",32
+D6930,re-cement or re-bond fixed partial denture,163.48,57.12,98,118,151,200,200,217,250,250,65
+D7111,"extraction, coronal remnants – primary
+tooth",138.66,45.11,75,110,130,160,175,185,200,200,57
+D7140,"extraction, erupted tooth or exposed root
+(elevation and/or forceps removal)",205.07,62.99,141,153,200,250,259,275,300,300,75
+D7210,"extraction, erupted tooth requiring
+removal of bone and/or sectioning of
+tooth, and including elevation of
+mucoperiosteal flap if indicated",303.12,74.01,215,246,300,350,350,395,400,450,62
+D7220,removal of impacted tooth - soft tissue,352.5,82.55,279,290,335,400,400,418,465,550,39
+D7230,removal of impacted tooth - partially bony,442.53,106.67,325,385,402,500,518,520,550,750,35
+D7250,"removal of residual tooth roots (cutting
+procedure)",300.09,76.71,195,250,300,344,350,375,405,450,41
+D7310,"alveoloplasty in conjunction with
+extractions - four or more teeth or tooth
+spaces, per quadrant",287.62,102.15,168,200,264,350,350,360,450,500,32
+D7320,"alveoloplasty not in conjunction with
+extractions - four or more teeth or tooth
+spaces, per quadrant",417.57,125.45,261,325,425,488,500,500,522,600,30
+D9110,"palliative (emergency) treatment of dental
+pain - minor procedure",105.89,50.26,45,65,100,149,150,160,175,200,77
+D9120,fixed partial denture sectioning,167.71,80.17,70,92,175,250,250,255,275,281,44
+D9230,"inhalation of nitrous oxide/analgesia,
+anxiolysis",80.56,44.33,14,50,75,100,100,150,154,157,34
+D9310,"consultation - diagnostic service provided
+by dentist or physician other than
+requesting dentist or physician",115.01,61.09,38,75,100,152,160,175,200,225,36
+D9430,"office visit for observation (during
+regularly scheduled hours) - no other
+services performed",47.62,31.66,0,38,50,71,75,75,75,98,35
+D9440,"office visit - after regularly scheduled
+hours",161.27,56.52,92,100,155,208,225,225,235,250,35
+D9910,application of desensitizing medicament,60.4,23.21,35,40,60,75,80,80,95,99,54
+D9911,"application of desensitizing resin for
+cervical and/or root surface, per tooth",70.75,28.25,42,45,70,84,99,100,110,117,41
+D9940,"occlusal guard, by report",466.64,142.59,300,375,412,550,630,649,650,750,64
+D9941,fabrication of athletic mouthguard,282.32,143,65,185,285,348,350,475,500,500,55
+D9951,occlusal adjustment - limited,146.58,84.53,45,95,125,194,195,221,250,295,48
+D9952,occlusal adjustment - complete,556.05,329.53,150,250,520,700,846,950,"1,090","1,137",34
+D9972,"external bleaching - per arch - performed
+in office",315.25,166.29,120,156,300,399,400,500,600,650,44
+D9974,internal bleaching - per tooth,242.88,87.33,125,156,210,308,348,350,364,395,34
+D9975,"external bleaching for home application,
+per arch; includes materials and
+fabrication of custom trays",280.46,154.98,111,158,250,380,392,450,595,650,49

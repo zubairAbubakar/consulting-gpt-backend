@@ -1,0 +1,6 @@
+{
+    "name": "Bioprinting",
+    "Problem Statement": "This technology is a solution to the shortage of donor organs available for transplantation.",
+    "Explanation": "Uses 3D printing techniques to create functional tissues and organs.",
+    "path": "comp_axes.csv"
+}
