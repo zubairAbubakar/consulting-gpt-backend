@@ -1,12 +1,20 @@
-import asyncio
 import os
+import asyncio
 import pandas as pd
 import logging
-from selenium import webdriver
 from bs4 import BeautifulSoup
 from typing import List, Dict, Tuple
+from requests.exceptions import RequestException
+from time import sleep
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
 
 from sqlalchemy.orm import Session
+from app.models.dental_fee_schedule import DentalFeeSchedule
 from app.models.fee_schedule import FeeSchedule
 from app.models.medical_association import MedicalAssociation
 from app.models.technology import Guidelines, MedicalAssessment, BillableItem
@@ -18,6 +26,7 @@ class MedicalAssessmentService:
     def __init__(self, gpt_service: GPTService, db: Session):
         self.gpt_service = gpt_service
         self.db = db
+        self.selenium_url = os.getenv('SELENIUM_URL', 'http://chrome:4444/wd/hub')
 
     async def classify_medical_association(self, problem_statement: str) -> str:
         """
@@ -74,81 +83,95 @@ class MedicalAssessmentService:
         technology_name: str,
         problem_statement: str
     ) -> List[Guidelines]:
-        """Fetch and score medical guidelines from guidelinecentral.com"""
+        """Fetch and score medical guidelines using Selenium"""
         try:
-            # Setup Chrome driver
-            driver = webdriver.Chrome()
+            # Configure Chrome options
+            chrome_options = Options()
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--disable-dev-shm-usage')
             
-            # Access guidelinecentral.com with medical association
-            url = f"https://www.guidelinecentral.com/guidelines/{medical_association}"
-            driver.get(url)
-            await asyncio.sleep(2)
-            
-            # Get page content
-            page_source = driver.page_source
-            driver.quit()
-            
-            # Parse content
-            soup = BeautifulSoup(page_source, 'html.parser')
-            search_results = soup.findAll('div', {'class': 'search-result'})
-            
+            # Initialize remote driver
+            driver = webdriver.Remote(
+                command_executor=self.selenium_url,
+                options=chrome_options
+            )
             guidelines_list = []
             
-            # Create prompt for scoring relevance
-            system_prompt = (
-                f"Given this problem statement: {problem_statement} "
-                "rate on a scale of 0 to 1, predict how likely it is to contain "
-                "the current industry standard treatment for this ailment. "
-                "Return only the number. Do not add any additional text or explanation."
-            )
-            
-            # Process each search result
-            for result in search_results:
-                try:
-                    meta = result.find('div', {'class': 'result-meta'})
-                    title = meta.find('a').text
-                    link = meta.find('a')['href']
-                    
-                    # Score relevance using GPT
-                    score = float(await self.gpt_service._create_chat_completion(
-                        system_prompt=system_prompt,
-                        user_prompt=title,
-                        temperature=0.0
-                    ))
-                    
-                    guideline = Guidelines(
-                        title=title,
-                        link=link,
-                        relevance_score=score
-                    )
-                    guidelines_list.append(guideline)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing guideline result: {e}")
-                    continue
-            
-            # Sort by relevance score
-            guidelines_list.sort(key=lambda x: x.relevance_score, reverse=True)
-            
-            # Get content for top 3 guidelines
-            for guideline in guidelines_list[:3]:
-                try:
-                    driver = webdriver.Chrome()
-                    driver.get(guideline.link)
-                    await asyncio.sleep(1.5)
-                    
-                    soup = BeautifulSoup(driver.page_source, 'html.parser')
-                    driver.quit()
-                    
-                    content_divs = soup.findAll('div', {'class': 'summary-item-body'})
-                    content = " ".join(div.text for div in content_divs)
-                    guideline.content = content
-                    
-                except Exception as e:
-                    logger.error(f"Error fetching guideline content: {e}")
-                    continue
-            
-            return guidelines_list
+            try:
+                # Access guidelinecentral.com and get initial search results
+                url = f"https://www.guidelinecentral.com/guidelines/{medical_association}"
+                driver.get(url)
+                
+                # Wait for results to load
+                wait = WebDriverWait(driver, 10)
+                search_results = wait.until(
+                    EC.presence_of_all_elements_located((By.CLASS_NAME, "search-result"))
+                )
+                
+                # Store guideline data before navigation
+                guideline_data = []
+                for result in search_results:
+                    try:
+                        meta = result.find_element(By.CLASS_NAME, "result-meta")
+                        link_elem = meta.find_element(By.TAG_NAME, "a")
+                        guideline_data.append({
+                            'title': link_elem.text,
+                            'link': link_elem.get_attribute("href")
+                        })
+                    except Exception as e:
+                        logger.error(f"Error extracting guideline data: {e}")
+                        continue
+                
+                print(f"Found {len(guideline_data)} search results for {medical_association}")
+                
+                # Process each guideline
+                for data in guideline_data:
+                    try:
+                        title = data['title']
+                        link = data['link']
+                        print(f"Processing guideline: {title} - {link}")
+                        
+                        # Score relevance using GPT
+                        score = float(await self.gpt_service._create_chat_completion(
+                            system_prompt=(
+                                f"Given this problem statement: {problem_statement} "
+                                "rate on a scale of 0 to 1, predict how likely it is to contain "
+                                "the current industry standard treatment for this ailment. "
+                                "Return only the number."
+                            ),
+                            user_prompt=title,
+                            temperature=0.0
+                        ))
+                        
+                        # Get guideline content in a new page load
+                        driver.get(link)
+                        content_divs = wait.until(
+                            EC.presence_of_all_elements_located((By.CLASS_NAME, "summary-item-body"))
+                        )
+                        content = " ".join(div.text for div in content_divs)
+                        
+                        guideline = Guidelines(
+                            title=title,
+                            link=link,
+                            relevance_score=score,
+                            content=content
+                        )
+                        guidelines_list.append(guideline)
+                        
+                        # Add delay between requests
+                        await asyncio.sleep(1)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing guideline {title}: {e}")
+                        continue
+                        
+                # Sort by relevance score and return top 3
+                guidelines_list.sort(key=lambda x: x.relevance_score, reverse=True)
+                return guidelines_list[:3]
+                
+            finally:
+                driver.quit()
 
         except Exception as e:
             logger.error(f"Error fetching guidelines: {e}")
@@ -157,7 +180,8 @@ class MedicalAssessmentService:
     async def _get_hcpcs_codes(self, recommendations: str) -> List[str]:
         """Extract HCPCS codes from recommendations"""
         system_prompt = (
-            "Given these medical recommendations, list out all of the HCPCS codes involved. "
+            "Your are a medical domain expert. Given these medical recommendations, "
+            "list out all of the HCPCS codes involved in such a prescription to help get the fees. "
             "List only the codes and nothing else. Output as a csv with no spaces between codes."
         )
         
@@ -170,45 +194,164 @@ class MedicalAssessmentService:
         codes = [code.strip() for code in response.split(',') if code.strip()]
         return codes
 
+    async def _fetch_cms_fee(self, code: str) -> Dict:
+        """Fetch fee data from CMS website for non-dental codes"""
+        try:
+            # Configure Chrome options
+            chrome_options = Options()
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            
+            # Initialize remote driver
+            driver = webdriver.Remote(
+                command_executor=self.selenium_url,
+                options=chrome_options
+            )
+            
+            try:
+                # Access CMS website
+                url = f"https://www.cms.gov/medicare/physician-fee-schedule/search?Y=0&T=0&HT=0&CT=3&H1={code}&M=5"
+                driver.get(url)
+                
+                # Accept license
+                wait = WebDriverWait(driver, 10)
+                accept_button = wait.until(
+                    EC.element_to_be_clickable((By.XPATH, '//*[@id="acceptPFSLicense"]'))
+                )
+                accept_button.click()
+                
+                # Wait for table to load
+                wait.until(EC.presence_of_element_located((By.TAG_NAME, 'table')))
+                
+                # Get page content
+                page_source = driver.page_source
+                soup = BeautifulSoup(page_source, 'html.parser')
+                
+                # Find table and extract data
+                table = soup.find('table')
+                table_data = []
+                
+                for row in table.find_all('tr'):
+                    columns = row.find_all('td')
+                    table_data.append([col.text.strip() for col in columns])
+                
+                # Before getting fee from table, add better handling for currency format
+                if len(table_data) > 1 and len(table_data[1]) > 5:
+                    # Get the raw fee text
+                    fee_text = table_data[1][6]
+                    description = table_data[1][2] if len(table_data[1]) > 1 else "No description"
+                    
+                    # More robust parsing for currency values
+                    try:
+                        # Handle various formats like "$1,259.25" or "1,259.25" or "NA"
+                        print(f"Raw fee text: '{fee_text}' for code {code}")
+                        
+                        # Remove all currency symbols, commas, and extra whitespace
+                        cleaned_fee = fee_text.replace('$', '').replace(',', '').strip()
+                        
+                        # Check if it's a special case like "NA" or empty
+                        if not cleaned_fee or cleaned_fee.lower() == "na":
+                            fee = 0.0
+                        else:
+                            fee = float(cleaned_fee)
+                            
+                        print(f"Parsed fee value: {fee} for code {code}")
+                    except ValueError as e:
+                        logger.warning(f"Failed to parse fee value '{fee_text}' for code {code}: {e}")
+                        fee = 0.0
+                    
+                    return {
+                        "code": code,
+                        "description": description,
+                        "fee": fee
+                    }
+                else:
+                    return {
+                        "code": code,
+                        "description": "Fee data not found in CMS table",
+                        "fee": 0.0
+                    }
+            finally:
+                driver.quit()
+                
+        except Exception as e:
+            logger.error(f"Error fetching CMS fee for code {code}: {e}")
+            return {
+                "code": code,
+                "description": f"Error fetching fee: {str(e)}",
+                "fee": 0.0
+            }
+
     async def calculate_fee_schedule(
         self,
         hcpcs_codes: List[str]
     ) -> List[Dict]:
-        """Calculate fee schedule for HCPCS codes"""
+        """Calculate fee schedule for HCPCS codes using both dental and CMS data"""
         try:
-            # Query fee schedule from database
             fee_items = []
             
-            # Load fee schedule from database
-            fee_schedule = self.db.query(FeeSchedule)\
-                .filter(FeeSchedule.hcpcs_code.in_(hcpcs_codes))\
-                .all()
-            
             for code in hcpcs_codes:
-                fee_item = next(
-                    (item for item in fee_schedule if item.hcpcs_code == code),
-                    None
-                )
-                
-                if fee_item:
-                    fee_items.append({
-                        "code": code,
-                        "description": fee_item.description,
-                        "fee": fee_item.fee
-                    })
+                # Handle dental codes (starting with "D")
+                if code.startswith("D"):
+                    # Query dental fee schedule from database
+                    fee_item = self.db.query(DentalFeeSchedule)\
+                        .filter(DentalFeeSchedule.code == code)\
+                        .first()
+                    
+                    if fee_item:
+                        fee_items.append({
+                            "code": code,
+                            "description": fee_item.description,
+                            "fee": fee_item.average_fee,
+                            "std_deviation": fee_item.std_deviation,
+                            "percentile_50th": fee_item.percentile_50th, 
+                            "percentile_75th": fee_item.percentile_75th,
+                            "percentile_90th": fee_item.percentile_90th
+                        })
+                    else:
+                        # If dental code not found
+                        fee_items.append({
+                            "code": code,
+                            "description": "Dental code not found",
+                            "fee": 0.0
+                        })
                 else:
-                    # If code not found, add with placeholder values
-                    fee_items.append({
-                        "code": code,
-                        "description": "Description not found",
-                        "fee": 0.0
-                    })
-            
+                    # For non-dental codes
+                    # First check if we have it in our database
+                    medical_fee = self.db.query(FeeSchedule)\
+                        .filter(FeeSchedule.hcpcs_code == code)\
+                        .first()
+                    
+                    if medical_fee:
+                        fee_items.append({
+                            "code": code,
+                            "description": medical_fee.description,
+                            "fee": medical_fee.fee
+                        })
+                    else:
+                        # Fetch from CMS website
+                        fee_data = await self._fetch_cms_fee(code)
+                        
+                        # Add to database for future lookups
+                        if fee_data["fee"] > 0:
+                            new_fee = FeeSchedule(
+                                hcpcs_code=code,
+                                description=fee_data["description"],
+                                fee=fee_data["fee"]
+                            )
+                            self.db.add(new_fee)
+                            self.db.commit()
+                        
+                        fee_items.append(fee_data)
+                
+            logger.info(f"Calculated fees for {len(fee_items)} HCPCS codes")
             return fee_items
 
         except Exception as e:
             logger.error(f"Error calculating fee schedule: {e}")
-            raise
+            return [{"code": code, "description": "Error retrieving fee", "fee": 0.0} for code in hcpcs_codes]
+    
 
     async def extract_procedures(
         self,
@@ -259,7 +402,7 @@ class MedicalAssessmentService:
                 technology_name,
                 problem_statement
             )
-            
+            print(f"Guidelines found: {len(guidelines_list)}")
             # Add guidelines to assessment
             for guideline in guidelines_list:
                 guideline.assessment_id = assessment.id
@@ -270,7 +413,7 @@ class MedicalAssessmentService:
                 g.content for g in guidelines_list[:3] 
                 if g.content is not None
             )
-            
+            print(f"Extracting procedures from guidelines: {all_guidelines_text[:100]}...")  # Log first 100 chars
             codes, recommendations = await self.extract_procedures(
                 all_guidelines_text, 
                 problem_statement

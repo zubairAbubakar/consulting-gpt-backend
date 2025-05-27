@@ -14,7 +14,17 @@ from app.services.gpt_service import GPTService
 from app.services.medical_assessment_service import MedicalAssessmentService
 from app.services.recommendation_service import RecommendationService
 from app.services.technology_service import TechnologyService
-from app.models.technology import MarketAnalysis, PCAResult, PatentSearch, PatentResult, RelatedPaper, ClusterResult, ClusterMember, Technology   
+from app.models.technology import ( 
+    MarketAnalysis, 
+    PCAResult, 
+    PatentSearch, 
+    RelatedPaper, 
+    ClusterResult, 
+    ClusterMember, 
+    Technology,
+    MedicalAssessment,
+    BillableItem 
+)
 from app.schemas.technology import (
     ComparisonAxisRead,
     TechnologyCreate,
@@ -548,6 +558,38 @@ async def create_medical_assessment(
         )
     
     return assessment
+
+
+@router.get("/{technology_id}/billable-items")
+async def get_billable_items(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get billable items for a technology's medical assessment"""
+    
+    # First get the medical assessment for this technology
+    assessment = db.query(MedicalAssessment)\
+        .filter(MedicalAssessment.technology_id == technology_id)\
+        .order_by(MedicalAssessment.created_at.desc())\
+        .first()
+    
+    if not assessment:
+        raise HTTPException(
+            status_code=404,
+            detail="No medical assessment found for this technology"
+        )
+    
+    # Get the billable items
+    billable_items = db.query(BillableItem)\
+        .filter(BillableItem.assessment_id == assessment.id)\
+        .all()
+    
+    return {
+        "assessment_id": assessment.id,
+        "medical_association": assessment.medical_association,
+        "billable_items": billable_items,
+        "total_fee": sum(item.fee for item in billable_items if item.fee)
+    }
 
 @router.get("/{technology_id}/classify-association")
 async def classify_medical_association(

@@ -14,8 +14,24 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=consulting_gpt
       - DATABASE_URL=postgresql://postgres:postgres@db/consulting_gpt
+      - PYTHONUNBUFFERED=1
+      - SELENIUM_URL=http://chrome:4444/wd/hub
     depends_on:
       - db
+      - chrome
+    networks:
+      - consulting-gpt-network
+
+  chrome:
+    image: seleniarm/standalone-chromium:latest  # Changed to ARM-compatible image
+    container_name: chrome
+    ports:
+      - "4444:4444"
+      - "7900:7900"
+    shm_size: "2g"
+    environment:
+      - SE_NODE_MAX_SESSIONS=4
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
     networks:
       - consulting-gpt-network
 
