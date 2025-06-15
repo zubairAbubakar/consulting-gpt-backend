@@ -670,6 +670,15 @@ async def complete_technology_setup_background(technology_id: int, db: Session):
         # Perform market analysis
         print(f"Starting market analysis for technology {technology_id}")
         await service.perform_market_analysis(technology_id)
+
+        pca_result = await service.perform_pca_analysis(technology_id)
+        if not pca_result:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not perform PCA analysis. Ensure market analysis has been completed."
+            )
+        
+        service.describe_pca_components_background(technology_id, pca_result.id)
             
     except Exception as e:
         print(f"Error in background task for technology {technology_id}: {e}")

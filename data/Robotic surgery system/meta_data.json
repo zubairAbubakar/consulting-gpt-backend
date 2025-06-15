@@ -1,0 +1,6 @@
+{
+    "name": "Robotic surgery system",
+    "Problem Statement": "This technology is a solution to the problem of performing complex surgeries with reduced precision, larger incisions, and longer recovery times for patients.",
+    "Explanation": "These systems allow surgeons to perform complex procedures with greater precision and control, often with smaller incisions and less recovery time for the patient.",
+    "path": "comp_axes.csv"
+}
