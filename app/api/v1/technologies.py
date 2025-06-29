@@ -586,6 +586,7 @@ async def get_billable_items(
     
     return {
         "assessment_id": assessment.id,
+        "recommendations": assessment.recommendations,
         "medical_association": assessment.medical_association,
         "billable_items": billable_items,
         "total_fee": sum(item.fee for item in billable_items if item.fee)

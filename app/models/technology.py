@@ -23,6 +23,7 @@ class Technology(Base):
     cluster_results = relationship("ClusterResult", back_populates="technology")
     recommendations = relationship("Recommendation", back_populates="technology")
     medical_assessments = relationship("MedicalAssessment", back_populates="technology")
+    analysis_status = relationship("AnalysisStatus", back_populates="technology")
 
 class ComparisonAxis(Base):
     __tablename__ = "comparison_axis"
@@ -135,6 +136,19 @@ class PCAResult(Base):
     total_variance_explained = Column(Float)
 
     technology = relationship("Technology", back_populates="pca_results")
+
+class AnalysisStatus(Base):
+    __tablename__ = "analysis_status"
+
+    id = Column(Integer, primary_key=True, index=True)
+    technology_id = Column(Integer, ForeignKey("technology.id"))
+    component_name = Column(String(255)) 
+    status = Column(String(100))  # e.g., processing, 'pending', 'complete', 'error'
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)  # Nullable for ongoing processes    
+    error_message = Column(Text, nullable=True)  # Nullable for successful processes
+
+    technology = relationship("Technology", back_populates="analysis_status")    
 
 class ClusterResult(Base):
     __tablename__ = "cluster_results"
