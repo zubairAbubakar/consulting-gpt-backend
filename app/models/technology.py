@@ -12,6 +12,7 @@ class Technology(Base):
     problem_statement = Column(Text)
     search_keywords = Column(Text, nullable=True)  # Adding search keywords column
     num_of_axes = Column(Integer, default=5)  # Default number of axes for technology comparison
+    market_analysis_summary = Column(Text, nullable=True)  # Summary insight of market analysis
 
     # Relationships
     comparison_axes = relationship("ComparisonAxis", back_populates="technology")

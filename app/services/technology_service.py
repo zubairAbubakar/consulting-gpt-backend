@@ -440,6 +440,15 @@ class TechnologyService:
                             continue  # Continue with next axis instead of failing completely
 
             self.db.commit()
+            
+            # Generate and store market analysis summary
+            try:
+                await self.generate_and_store_market_analysis_summary(technology_id)
+                logger.info(f"Generated market analysis summary for technology {technology_id}")
+            except Exception as summary_error:
+                logger.error(f"Error generating market analysis summary: {summary_error}")
+                # Continue even if summary generation fails
+            
             return True
 
         except Exception as e:
@@ -748,4 +757,55 @@ class TechnologyService:
         except Exception as e:
             logger.error(f"Error performing clustering: {e}")
             self.db.rollback()
-            return False        
+            return False
+
+    async def generate_and_store_market_analysis_summary(self, technology_id: int) -> str:
+        """
+        Generate and store a summary insight of the technology's market analysis.
+        
+        Args:
+            technology_id: The ID of the technology to analyze
+            
+        Returns:
+            The generated summary insight or an error message
+        """
+        try:
+            # Get the technology
+            technology = self.db.query(Technology).filter(Technology.id == technology_id).first()
+            if not technology:
+                return "Technology not found"
+                
+            # Generate the summary using GPTService
+            summary = await self.gpt_service.generate_market_analysis_summary(technology_id)
+            
+            # Store the summary in the database
+            technology.market_analysis_summary = summary
+            self.db.commit()
+            
+            return summary
+        except Exception as e:
+            logger.error(f"Error generating market analysis summary: {str(e)}")
+            self.db.rollback()
+            return f"Error generating market analysis summary: {str(e)}"
+    
+    async def get_market_analysis_summary(self, technology_id: int) -> str:
+        """
+        Get the stored market analysis summary or generate it if not available.
+        
+        Args:
+            technology_id: The ID of the technology
+            
+        Returns:
+            The market analysis summary
+        """
+        # Get the technology
+        technology = self.db.query(Technology).filter(Technology.id == technology_id).first()
+        if not technology:
+            return "Technology not found"
+            
+        # If summary exists, return it
+        if technology.market_analysis_summary:
+            return technology.market_analysis_summary
+            
+        # Otherwise, generate and store it
+        return await self.generate_and_store_market_analysis_summary(technology_id)

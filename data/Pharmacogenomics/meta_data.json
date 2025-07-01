@@ -1,6 +1,0 @@
-{
-    "name": "Pharmacogenomics",
-    "Problem Statement": "This technology is a solution to the problem of varying individual responses to medications due to genetic differences.",
-    "Explanation": "Pharmacogenomics is the study of how a person\u2019s DNA affects their response to medications. This field aims to personalize treatments by tailoring prescriptions to an individual\u2019s genetic makeup.",
-    "path": "comp_axes.csv"
-}

@@ -706,6 +706,49 @@ async def get_analysis_status(
             detail=f"Failed to get analysis status: {str(e)}"
         )
 
+@router.get("/{technology_id}/market-analysis-summary")
+async def get_market_analysis_summary(
+    technology_id: int,
+    regenerate: bool = False,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a summary insight of the technology's strengths and weaknesses
+    based on market analysis data
+    
+    The summary highlights the technology's most prominent strengths and weaknesses
+    when compared against the analyzed patents, based on different comparison axes.
+    
+    Parameters:
+    - technology_id: The ID of the technology
+    - regenerate: If True, regenerate the summary even if it already exists
+    
+    Returns:
+    - summary: The market analysis summary
+    """
+    try:
+        service = TechnologyService(db)
+        
+        # Check if we need to regenerate the summary
+        if regenerate:
+            summary = await service.generate_and_store_market_analysis_summary(technology_id)
+        else:
+            summary = await service.get_market_analysis_summary(technology_id)
+        
+        if summary.startswith("Error") or summary.startswith("Technology not found"):
+            raise HTTPException(
+                status_code=404 if summary == "Technology not found" else 500,
+                detail=summary
+            )
+        
+        return {"summary": summary}
+    except Exception as e:
+        logger.error(f"Error getting market analysis summary: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to get market analysis summary: {str(e)}"
+        )
+
 # Background task functions
 async def complete_technology_setup_background(technology_id: int, db: Session):
     """Complete technology setup in background"""

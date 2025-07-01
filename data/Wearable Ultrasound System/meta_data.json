@@ -1,6 +1,0 @@
-{
-    "name": "Wearable ultrasound system",
-    "Problem Statement": "This technology solves the problem of requiring manual operation for ultrasound imaging and delays in diagnosis by providing automated, hands-free imaging and real-time, AI-powered diagnostic insights.",
-    "Explanation": "Uses AI for real-time imaging and diagnosis. This device, developed by Sonologi, provides automated, hands-free ultrasound imaging while a patient is wearing it. AI-powered analytics in the system allow clinicians to access actionable insights in real-time, improving decision-making and patient outcomes. ",
-    "path": "comp_axes.csv"
-}

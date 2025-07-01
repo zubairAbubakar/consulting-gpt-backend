@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 0d1f66a3822f
+Revision ID: 4bc3a1c90a04
 Revises: 
-Create Date: 2025-05-26 22:21:44.287478
+Create Date: 2025-07-01 21:02:46.159366
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0d1f66a3822f'
+revision: str = '4bc3a1c90a04'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -66,12 +66,27 @@ def upgrade() -> None:
     sa.Column('problem_statement', sa.Text(), nullable=True),
     sa.Column('search_keywords', sa.Text(), nullable=True),
     sa.Column('num_of_axes', sa.Integer(), nullable=True),
+    sa.Column('market_analysis_summary', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_technology_id'), 'technology', ['id'], unique=False)
     op.create_index(op.f('ix_technology_name'), 'technology', ['name'], unique=True)
+    op.create_table('analysis_status',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('technology_id', sa.Integer(), nullable=True),
+    sa.Column('component_name', sa.String(length=255), nullable=True),
+    sa.Column('status', sa.String(length=100), nullable=True),
+    sa.Column('started_at', sa.DateTime(), nullable=True),
+    sa.Column('completed_at', sa.DateTime(), nullable=True),
+    sa.Column('error_message', sa.Text(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.ForeignKeyConstraint(['technology_id'], ['technology.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_analysis_status_id'), 'analysis_status', ['id'], unique=False)
     op.create_table('cluster_results',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('technology_id', sa.Integer(), nullable=True),
@@ -283,6 +298,8 @@ def downgrade() -> None:
     op.drop_table('comparison_axis')
     op.drop_index(op.f('ix_cluster_results_id'), table_name='cluster_results')
     op.drop_table('cluster_results')
+    op.drop_index(op.f('ix_analysis_status_id'), table_name='analysis_status')
+    op.drop_table('analysis_status')
     op.drop_index(op.f('ix_technology_name'), table_name='technology')
     op.drop_index(op.f('ix_technology_id'), table_name='technology')
     op.drop_table('technology')

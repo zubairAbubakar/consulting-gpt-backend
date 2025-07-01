@@ -808,3 +808,107 @@ class GPTService:
             "name": name or "Unnamed Cluster",
             "description": description or "No description available"
         }
+    
+    async def generate_market_analysis_summary(self, technology_id: int) -> str:
+        """
+        Generate a summary insight of the technology's market analysis highlighting
+        strengths and weaknesses compared to related patents.
+        
+        Args:
+            technology_id: The ID of the technology to analyze
+            
+        Returns:
+            A string containing the market analysis summary insight
+            
+        Example:
+            "Overall, when benchmarked against related patents, this technology demonstrates 
+            a significant competitive edge in 'Precision & Dexterity Enhancement' (average score: 0.85),
+            consistently outperforming in areas requiring high accuracy. However, it faces its most 
+            considerable challenges or shows the greatest potential for improvement in 'Cost-Effectiveness' 
+            (average score: 0.20), where competing solutions may currently hold an advantage."
+        """
+        # Get the technology
+        technology = self.db.query(Technology).filter(Technology.id == technology_id).first()
+        if not technology:
+            return "Technology not found"
+            
+        # Get the comparison axes
+        comparison_axes = self.db.query(ComparisonAxis).filter(
+            ComparisonAxis.technology_id == technology_id
+        ).all()
+        
+        if not comparison_axes:
+            return "No comparison axes found for this technology"
+            
+        # Create a mapping of axis_id to axis_name for later use
+        axis_id_to_name = {axis.id: axis.axis_name for axis in comparison_axes}
+        
+        # Get market analysis data
+        market_analyses = self.db.query(technology.market_analyses).all()
+        if not market_analyses or len(market_analyses) == 0:
+            return "No market analysis data available for this technology"
+            
+        # Calculate average scores for each axis
+        axis_scores = {}
+        for axis in comparison_axes:
+            # Get all scores for this axis
+            axis_scores[axis.id] = []
+            
+        # Populate scores
+        for analysis in market_analyses:
+            if analysis.axis_id in axis_scores:
+                axis_scores[analysis.axis_id].append(analysis.score)
+                
+        # Calculate averages
+        axis_averages = {}
+        for axis_id, scores in axis_scores.items():
+            if scores:
+                axis_averages[axis_id] = sum(scores) / len(scores)
+            else:
+                axis_averages[axis_id] = 0
+                
+        # Find highest and lowest scoring axes
+        if not axis_averages:
+            return "Insufficient data to generate market analysis summary"
+            
+        highest_score_axis_id = max(axis_averages, key=axis_averages.get)
+        lowest_score_axis_id = min(axis_averages, key=axis_averages.get)
+        
+        highest_score = axis_averages[highest_score_axis_id]
+        lowest_score = axis_averages[lowest_score_axis_id]
+        
+        highest_axis_name = axis_id_to_name.get(highest_score_axis_id, "Unknown Axis")
+        lowest_axis_name = axis_id_to_name.get(lowest_score_axis_id, "Unknown Axis")
+        
+        # Generate summary using GPT
+        system_prompt = """
+        You are an expert technology analyst providing concise, insightful summaries of market positioning.
+        Based on the analysis data provided, create a brief, professional summary highlighting the technology's
+        key strengths and weaknesses compared to related patents.
+        
+        Focus on the areas where it performs best and worst according to the comparison axes.
+        Keep your response to 2-3 sentences maximum. Be specific about the axis names and scores.
+        """
+        
+        user_prompt = f"""
+        Technology Name: {technology.name}
+        Technology Abstract: {technology.abstract}
+        
+        Comparison Axes Analysis:
+        - Strongest Area: '{highest_axis_name}' (average score: {highest_score:.2f})
+        - Weakest Area: '{lowest_axis_name}' (average score: {lowest_score:.2f})
+        
+        Please generate a concise market analysis summary highlighting these strengths and weaknesses.
+        """
+        
+        try:
+            summary = await self._create_chat_completion(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.7
+            )
+            
+            return summary.strip()
+        except Exception as e:
+            logger.error(f"Error generating market analysis summary: {str(e)}")
+            return f"Error generating market analysis summary: {str(e)}"
