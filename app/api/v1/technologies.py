@@ -824,9 +824,7 @@ async def complete_technology_setup_background(technology_id: int, db: Session):
         # Update cluster analysis status (if applicable)
         status_service.update_status(technology_id, "clusterAnalysis", "processing")
         try:
-            # This is a placeholder - you would call the actual clustering code here
-            # service.perform_cluster_analysis(technology_id)
-            # For now, just mark it complete since clustering is part of PCA visualization
+            service.perform_cluster_analysis(technology_id)
             status_service.update_status(technology_id, "clusterAnalysis", "complete")
         except Exception as cluster_error:
             print(f"Error performing cluster analysis: {cluster_error}")

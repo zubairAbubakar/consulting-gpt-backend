@@ -10,7 +10,7 @@ from openai import AsyncOpenAI, RateLimitError
 from openai.types.chat import ChatCompletion
 from app.core.config import settings
 from sqlalchemy.orm import Session
-from app.models.technology import Technology, ComparisonAxis, PatentSearch, PatentResult
+from app.models.technology import Technology, ComparisonAxis, PatentSearch, PatentResult, MarketAnalysis
 from app.services.patent_service import PatentService
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -158,7 +158,14 @@ class GPTService:
                     frequency_penalty=frequency_penalty,
                     presence_penalty=presence_penalty
                 )
-                return response.choices[0].message.content.strip()
+                
+                # Check if the response has content
+                if response.choices and response.choices[0].message.content:
+                    content = response.choices[0].message.content
+                    return content.strip() if content else None
+                else:
+                    logger.warning("OpenAI returned empty response")
+                    return None
             except RateLimitError:
                 if attempt < retry_count - 1:
                     await asyncio.sleep(20 * (attempt + 1))  # Exponential backoff
@@ -844,7 +851,8 @@ class GPTService:
         axis_id_to_name = {axis.id: axis.axis_name for axis in comparison_axes}
         
         # Get market analysis data
-        market_analyses = self.db.query(technology.market_analyses).all()
+        # Use the relationship to get market analyses for this technology
+        market_analyses = technology.market_analyses
         if not market_analyses or len(market_analyses) == 0:
             return "No market analysis data available for this technology"
             
@@ -907,6 +915,10 @@ class GPTService:
                 user_prompt=user_prompt,
                 temperature=0.7
             )
+            
+            # Check if summary is None before calling strip()
+            if summary is None:
+                return "Unable to generate market analysis summary due to API issues"
             
             return summary.strip()
         except Exception as e:
