@@ -316,24 +316,6 @@ class GPTService:
                 logger.error(f"Missing required columns. Found: {comp_axes.columns.tolist()}")
                 return pd.DataFrame(), problem_statement
 
-            # Create technology directory and save files
-            tech_dir = os.path.join(os.getcwd(), "data", technology_name)
-            os.makedirs(tech_dir, exist_ok=True)
-
-            # Save comparison axes CSV
-            csv_path = os.path.join(tech_dir, "comp_axes.csv")
-            comp_axes.to_csv(csv_path, index=False)
-
-            # Save metadata JSON
-            metadata = {
-                "name": technology_name,
-                "Problem Statement": problem_statement,
-                "Explanation": technology_description,
-                "path": "comp_axes.csv"
-            }
-            with open(os.path.join(tech_dir, "meta_data.json"), "w") as f:
-                json.dump(metadata, f, indent=4)
-
             return comp_axes, problem_statement
 
         except Exception as e:

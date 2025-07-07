@@ -63,7 +63,7 @@ async def create_technology(
     tech = await service.create_technology(
         name=technology.name,
         abstract=technology.abstract,
-        num_of_axes=technology.num_of_axes or 5  # Default to 5 if not specified
+        num_of_axes=technology.num_of_axes
     )
     
     if not tech:
@@ -760,8 +760,11 @@ async def complete_technology_setup_background(technology_id: int, db: Session):
     
     try:
         # Generate search keywords
+        # await service.generate_search_keywords(technology_id)
+
+        # Update comparison axes status
         status_service.update_status(technology_id, "comparisonAxes", "processing")
-        await service.generate_search_keywords(technology_id)
+        # await service.generate_comparison_axes(technology_id)
         status_service.update_status(technology_id, "comparisonAxes", "complete")
         
         # Search patents
@@ -816,7 +819,7 @@ async def complete_technology_setup_background(technology_id: int, db: Session):
                 status_service.update_status(technology_id, "pcaVisualization", "error", "Could not perform PCA analysis")
             else:
                 service.describe_pca_components_background(technology_id, pca_result.id)
-                status_service.update_status(technology_id, "pcaVisualization", "complete")
+                
         except Exception as pca_error:
             print(f"Error performing PCA analysis: {pca_error}")
             status_service.update_status(technology_id, "pcaVisualization", "error", str(pca_error))
@@ -824,8 +827,13 @@ async def complete_technology_setup_background(technology_id: int, db: Session):
         # Update cluster analysis status (if applicable)
         status_service.update_status(technology_id, "clusterAnalysis", "processing")
         try:
-            service.perform_cluster_analysis(technology_id)
+            await service.perform_clustering(technology_id)
+        
             status_service.update_status(technology_id, "clusterAnalysis", "complete")
+            # Update PCA visualization status to complete after clustering
+            # This assumes clustering is part of PCA visualization
+            # If clustering is independent, this line can be removed
+            status_service.update_status(technology_id, "pcaVisualization", "complete")            
         except Exception as cluster_error:
             print(f"Error performing cluster analysis: {cluster_error}")
             status_service.update_status(technology_id, "clusterAnalysis", "error", str(cluster_error))

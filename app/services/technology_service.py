@@ -50,6 +50,9 @@ class TechnologyService:
             self.db.commit()
             self.db.refresh(db_technology)
 
+            # Generate search keywords
+            await self.generate_search_keywords(db_technology.id)
+
             # Generate and save comparison axes
             axes_df, _ = await self.gpt_service.generate_comparison_axes(
                 technology_name=name,

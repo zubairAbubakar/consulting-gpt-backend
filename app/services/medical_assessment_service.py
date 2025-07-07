@@ -2,6 +2,7 @@ import os
 import asyncio
 import pandas as pd
 import logging
+import aiohttp
 from bs4 import BeautifulSoup
 from typing import List, Dict, Tuple
 from requests.exceptions import RequestException
@@ -195,88 +196,63 @@ class MedicalAssessmentService:
         return codes
 
     async def _fetch_cms_fee(self, code: str) -> Dict:
-        """Fetch fee data from CMS website for non-dental codes"""
+        """Fetch fee data from CMS API for non-dental codes"""
         try:
-            # Configure Chrome options
-            chrome_options = Options()
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--headless=new')
-            chrome_options.add_argument('--disable-dev-shm-usage')
+            # CMS API endpoint URL with the HCPCS code filter
+            api_url = f"https://data.cms.gov/data-api/v1/dataset/92396110-2aed-4d63-a6a2-5d6207d46a29/data?filter%5BHCPCS_Cd%5D={code}&size=1"
             
-            # Initialize remote driver
-            driver = webdriver.Remote(
-                command_executor=self.selenium_url,
-                options=chrome_options
-            )
-            
-            try:
-                # Access CMS website
-                url = f"https://www.cms.gov/medicare/physician-fee-schedule/search?Y=0&T=0&HT=0&CT=3&H1={code}&M=5"
-                driver.get(url)
-                
-                # Accept license
-                wait = WebDriverWait(driver, 10)
-                accept_button = wait.until(
-                    EC.element_to_be_clickable((By.XPATH, '//*[@id="acceptPFSLicense"]'))
-                )
-                accept_button.click()
-                
-                # Wait for table to load
-                wait.until(EC.presence_of_element_located((By.TAG_NAME, 'table')))
-                
-                # Get page content
-                page_source = driver.page_source
-                soup = BeautifulSoup(page_source, 'html.parser')
-                
-                # Find table and extract data
-                table = soup.find('table')
-                table_data = []
-                
-                for row in table.find_all('tr'):
-                    columns = row.find_all('td')
-                    table_data.append([col.text.strip() for col in columns])
-                
-                # Before getting fee from table, add better handling for currency format
-                if len(table_data) > 1 and len(table_data[1]) > 5:
-                    # Get the raw fee text
-                    fee_text = table_data[1][6]
-                    description = table_data[1][2] if len(table_data[1]) > 1 else "No description"
-                    
-                    # More robust parsing for currency values
-                    try:
-                        # Handle various formats like "$1,259.25" or "1,259.25" or "NA"
-                        print(f"Raw fee text: '{fee_text}' for code {code}")
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url) as response:
+                    if response.status == 200:
+                        data = await response.json()
                         
-                        # Remove all currency symbols, commas, and extra whitespace
-                        cleaned_fee = fee_text.replace('$', '').replace(',', '').strip()
-                        
-                        # Check if it's a special case like "NA" or empty
-                        if not cleaned_fee or cleaned_fee.lower() == "na":
-                            fee = 0.0
-                        else:
-                            fee = float(cleaned_fee)
+                        if data and len(data) > 0:
+                            # Extract data from the first record
+                            record = data[0]
                             
-                        print(f"Parsed fee value: {fee} for code {code}")
-                    except ValueError as e:
-                        logger.warning(f"Failed to parse fee value '{fee_text}' for code {code}: {e}")
-                        fee = 0.0
-                    
-                    return {
-                        "code": code,
-                        "description": description,
-                        "fee": fee
-                    }
-                else:
-                    return {
-                        "code": code,
-                        "description": "Fee data not found in CMS table",
-                        "fee": 0.0
-                    }
-            finally:
-                driver.quit()
-                
+                            # Get description from HCPCS_Desc field
+                            description = record.get('HCPCS_Desc', 'No description available')
+                            
+                            # Get fee from Avg_Mdcr_Alowd_Amt field
+                            fee_text = record.get('Avg_Mdcr_Alowd_Amt', '0')
+                            
+                            try:
+                                # Parse the fee amount
+                                fee = float(fee_text) if fee_text else 0.0
+                                logger.info(f"Successfully fetched CMS fee for code {code}: ${fee}")
+                            except (ValueError, TypeError) as e:
+                                logger.warning(f"Failed to parse fee value '{fee_text}' for code {code}: {e}")
+                                fee = 0.0
+                            
+                            return {
+                                "code": code,
+                                "description": description,
+                                "fee": fee
+                            }
+                        else:
+                            logger.warning(f"No fee data found for HCPCS code {code}")
+                            return {
+                                "code": code,
+                                "description": "Fee data not found in CMS database",
+                                "fee": 0.0
+                            }
+                    else:
+                        logger.error(f"CMS API request failed with status {response.status} for code {code}")
+                        return {
+                            "code": code,
+                            "description": f"API request failed with status {response.status}",
+                            "fee": 0.0
+                        }
+                        
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error fetching CMS fee for code {code}: {e}")
+            return {
+                "code": code,
+                "description": f"Network error: {str(e)}",
+                "fee": 0.0
+            }
         except Exception as e:
-            logger.error(f"Error fetching CMS fee for code {code}: {e}")
+            logger.error(f"Unexpected error fetching CMS fee for code {code}: {e}")
             return {
                 "code": code,
                 "description": f"Error fetching fee: {str(e)}",
