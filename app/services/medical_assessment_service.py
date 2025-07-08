@@ -191,9 +191,9 @@ class MedicalAssessmentService:
             user_prompt=recommendations
         )
         
-        # Split response into list of codes
+        # Split response into list of codes and return first 10
         codes = [code.strip() for code in response.split(',') if code.strip()]
-        return codes
+        return codes[:10]
 
     async def _fetch_cms_fee(self, code: str) -> Dict:
         """Fetch fee data from CMS API for non-dental codes"""
