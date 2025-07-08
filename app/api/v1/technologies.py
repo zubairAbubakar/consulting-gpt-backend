@@ -14,6 +14,9 @@ from app.services.gpt_service import GPTService
 from app.services.medical_assessment_service import MedicalAssessmentService
 from app.services.recommendation_service import RecommendationService
 from app.services.technology_service import TechnologyService
+from app.services.analysis_status_service import AnalysisStatusService
+from app.schemas.analysis_status import AnalysisStatusResponse
+
 from app.models.technology import ( 
     MarketAnalysis, 
     PCAResult, 
@@ -60,11 +63,15 @@ async def create_technology(
     tech = await service.create_technology(
         name=technology.name,
         abstract=technology.abstract,
-        num_of_axes=technology.num_of_axes or 5  # Default to 5 if not specified
+        num_of_axes=technology.num_of_axes
     )
     
     if not tech:
         raise HTTPException(status_code=500, detail="Failed to create technology")
+    
+    # Initialize status tracking for this technology
+    status_service = AnalysisStatusService(db)
+    status_service.initialize_all_statuses(tech.id)
     
     # Run remaining tasks in background
     background_tasks.add_task(
@@ -102,16 +109,14 @@ def get_related_technologies(
     technology_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get related technologies for a specific technology"""
+    """Get related technologies for a specific technology ID"""
     service = TechnologyService(db)
+    related = service.get_related_technologies(technology_id)
     
-    # Verify technology exists
-    technology = service.get_technology_by_id(technology_id)
-    if not technology:
-        raise HTTPException(status_code=404, detail="Technology not found")
+    if not related:
+        raise HTTPException(status_code=404, detail="No related technologies found")
         
-    # Get related technologies
-    return service.get_related_technologies(technology_id)
+    return related
 
 @router.post("/{technology_id}/regenerate-keywords")
 async def regenerate_search_keywords(
@@ -543,21 +548,47 @@ async def create_medical_assessment(
     if not technology:
         raise HTTPException(status_code=404, detail="Technology not found")
 
-    medical_service = MedicalAssessmentService(GPTService(db), db)
-    
-    assessment = await medical_service.create_medical_assessment(
-        technology_id=technology_id,
-        problem_statement=technology.problem_statement,
-        technology_name=technology.name
-    )
-    
-    if not assessment:
-        raise HTTPException(
-            status_code=400,
-            detail="No relevant medical associations found"
+    # Update the medicalAssessment status to processing
+    status_service = AnalysisStatusService(db)
+    status_service.update_status(technology_id, "medicalAssessment", "processing")
+
+    try:
+        medical_service = MedicalAssessmentService(GPTService(db), db)
+        
+        assessment = await medical_service.create_medical_assessment(
+            technology_id=technology_id,
+            problem_statement=technology.problem_statement,
+            technology_name=technology.name
         )
-    
-    return assessment
+        
+        if not assessment:
+            status_service.update_status(
+                technology_id, 
+                "medicalAssessment", 
+                "error", 
+                "No relevant medical associations found"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="No relevant medical associations found"
+            )
+        
+        # Update status to complete
+        status_service.update_status(technology_id, "medicalAssessment", "complete")
+        return assessment
+    except Exception as e:
+        # Update status to error with the error message
+        status_service.update_status(
+            technology_id, 
+            "medicalAssessment", 
+            "error", 
+            str(e)
+        )
+        logger.error(f"Error creating medical assessment: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating medical assessment: {str(e)}"
+        )
 
 
 @router.get("/{technology_id}/billable-items")
@@ -586,6 +617,7 @@ async def get_billable_items(
     
     return {
         "assessment_id": assessment.id,
+        "recommendations": assessment.recommendations,
         "medical_association": assessment.medical_association,
         "billable_items": billable_items,
         "total_fee": sum(item.fee for item in billable_items if item.fee)
@@ -635,19 +667,109 @@ async def get_dental_fee(
         
     return fee
 
+@router.get("/{technology_id}/analysis-status", response_model=AnalysisStatusResponse)
+async def get_analysis_status(
+    technology_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get the status of all analysis components for a specific technology
+    
+    Returns status information for all analysis components:
+    - comparisonAxes
+    - relatedPatents
+    - relatedPapers
+    - marketAnalysis
+    - pcaVisualization
+    - medicalAssessment
+    - clusterAnalysis
+    
+    Each component will have one of these statuses:
+    - pending: Not yet started
+    - processing: Currently running
+    - complete: Successfully completed
+    - error: Failed with an error
+    
+    The response also includes:
+    - An overall status
+    - A recommended polling interval (milliseconds)
+    - Timestamps for when each process started/completed
+    """
+    try:
+        status_service = AnalysisStatusService(db)
+        status_summary = status_service.get_status_summary(technology_id)
+        return status_summary
+    except Exception as e:
+        logger.error(f"Error getting analysis status: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to get analysis status: {str(e)}"
+        )
+
+@router.get("/{technology_id}/market-analysis-summary")
+async def get_market_analysis_summary(
+    technology_id: int,
+    regenerate: bool = False,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a summary insight of the technology's strengths and weaknesses
+    based on market analysis data
+    
+    The summary highlights the technology's most prominent strengths and weaknesses
+    when compared against the analyzed patents, based on different comparison axes.
+    
+    Parameters:
+    - technology_id: The ID of the technology
+    - regenerate: If True, regenerate the summary even if it already exists
+    
+    Returns:
+    - summary: The market analysis summary
+    """
+    try:
+        service = TechnologyService(db)
+        
+        # Check if we need to regenerate the summary
+        if regenerate:
+            summary = await service.generate_and_store_market_analysis_summary(technology_id)
+        else:
+            summary = await service.get_market_analysis_summary(technology_id)
+        
+        if summary.startswith("Error") or summary.startswith("Technology not found"):
+            raise HTTPException(
+                status_code=404 if summary == "Technology not found" else 500,
+                detail=summary
+            )
+        
+        return {"summary": summary}
+    except Exception as e:
+        logger.error(f"Error getting market analysis summary: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to get market analysis summary: {str(e)}"
+        )
+
 # Background task functions
 async def complete_technology_setup_background(technology_id: int, db: Session):
     """Complete technology setup in background"""
     service = TechnologyService(db)
+    status_service = AnalysisStatusService(db)
+    
+    # Initialize all status records
+    status_service.initialize_all_statuses(technology_id)
+    
     try:
         # Generate search keywords
-        await service.generate_search_keywords(technology_id)
-        
-        # # Generate comparison axes
+        # await service.generate_search_keywords(technology_id)
+
+        # Update comparison axes status
+        status_service.update_status(technology_id, "comparisonAxes", "processing")
         # await service.generate_comparison_axes(technology_id)
+        status_service.update_status(technology_id, "comparisonAxes", "complete")
         
         # Search patents
         print(f"Starting patent search for technology {technology_id}")
+        status_service.update_status(technology_id, "relatedPatents", "processing")
         search_success = await service.search_patents(technology_id)
         print(f"Patent search completed with success: {search_success}")
         
@@ -656,20 +778,98 @@ async def complete_technology_setup_background(technology_id: int, db: Session):
                 print(f"Starting patent results processing for technology {technology_id}")
                 processing_success = await service.process_patent_results(technology_id)
                 print(f"Patent results processing completed: {processing_success}")
+                if processing_success:
+                    status_service.update_status(technology_id, "relatedPatents", "complete")
+                else:
+                    status_service.update_status(technology_id, "relatedPatents", "error", "Failed to process patent results")
             except Exception as process_error:
                 print(f"Error processing patent results: {process_error}")
+                status_service.update_status(technology_id, "relatedPatents", "error", str(process_error))
                 # Continue execution even if processing fails
         else:
             print("Patent search failed, skipping results processing")
+            status_service.update_status(technology_id, "relatedPatents", "error", "Patent search failed")
 
         # Search papers
         print(f"Starting paper search for technology {technology_id}")
-        await service.search_related_papers(technology_id)
-        print(f"Paper search completed for technology {technology_id}")
+        status_service.update_status(technology_id, "relatedPapers", "processing")
+        try:
+            await service.search_related_papers(technology_id)
+            print(f"Paper search completed for technology {technology_id}")
+            status_service.update_status(technology_id, "relatedPapers", "complete")
+        except Exception as paper_error:
+            print(f"Error searching related papers: {paper_error}")
+            status_service.update_status(technology_id, "relatedPapers", "error", str(paper_error))
 
         # Perform market analysis
         print(f"Starting market analysis for technology {technology_id}")
-        await service.perform_market_analysis(technology_id)
+        status_service.update_status(technology_id, "marketAnalysis", "processing")
+        try:
+            await service.perform_market_analysis(technology_id)
+            status_service.update_status(technology_id, "marketAnalysis", "complete")
+        except Exception as market_error:
+            print(f"Error performing market analysis: {market_error}")
+            status_service.update_status(technology_id, "marketAnalysis", "error", str(market_error))
+
+        # Perform PCA analysis
+        status_service.update_status(technology_id, "pcaVisualization", "processing")
+        try:
+            pca_result = await service.perform_pca_analysis(technology_id)
+            if not pca_result:
+                status_service.update_status(technology_id, "pcaVisualization", "error", "Could not perform PCA analysis")
+            else:
+                service.describe_pca_components_background(technology_id, pca_result.id)
+                
+        except Exception as pca_error:
+            print(f"Error performing PCA analysis: {pca_error}")
+            status_service.update_status(technology_id, "pcaVisualization", "error", str(pca_error))
+        
+        # Update cluster analysis status (if applicable)
+        status_service.update_status(technology_id, "clusterAnalysis", "processing")
+        try:
+            await service.perform_clustering(technology_id)
+        
+            status_service.update_status(technology_id, "clusterAnalysis", "complete")
+            # Update PCA visualization status to complete after clustering
+            # This assumes clustering is part of PCA visualization
+            # If clustering is independent, this line can be removed
+            status_service.update_status(technology_id, "pcaVisualization", "complete")            
+        except Exception as cluster_error:
+            print(f"Error performing cluster analysis: {cluster_error}")
+            status_service.update_status(technology_id, "clusterAnalysis", "error", str(cluster_error))
+            
+        # Perform medical assessment
+        print(f"Starting medical assessment for technology {technology_id}")
+        status_service.update_status(technology_id, "medicalAssessment", "processing")
+        try:
+            # Get technology details
+            technology = db.query(Technology).filter(Technology.id == technology_id).first()
+            if technology:
+                medical_service = MedicalAssessmentService(GPTService(db), db)
+                assessment = await medical_service.create_medical_assessment(
+                    technology_id=technology_id,
+                    problem_statement=technology.problem_statement,
+                    technology_name=technology.name
+                )
+                if assessment:
+                    status_service.update_status(technology_id, "medicalAssessment", "complete")
+                else:
+                    status_service.update_status(
+                        technology_id,
+                        "medicalAssessment",
+                        "error",
+                        "No relevant medical associations found"
+                    )
+            else:
+                status_service.update_status(
+                    technology_id,
+                    "medicalAssessment",
+                    "error",
+                    "Technology not found for medical assessment"
+                )
+        except Exception as medical_error:
+            print(f"Error performing medical assessment: {medical_error}")
+            status_service.update_status(technology_id, "medicalAssessment", "error", str(medical_error))
             
     except Exception as e:
         print(f"Error in background task for technology {technology_id}: {e}")

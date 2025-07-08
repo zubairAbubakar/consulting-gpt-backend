@@ -1,6 +1,0 @@
-{
-    "name": "Wearable ultrasound systems",
-    "Problem Statement": "This technology solves the problem of providing immediate, on-the-spot medical imaging and diagnostics without the need for traditional, stationary ultrasound systems.",
-    "Explanation": "These systems use portable, hands-free ultrasound technology to provide real-time, continuous imaging, often powered by AI for enhanced analysis and interpretation.",
-    "path": "comp_axes.csv"
-}

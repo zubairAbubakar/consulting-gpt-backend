@@ -67,6 +67,7 @@ class TechnologyRead(TechnologyBase):
     id: int
     search_keywords: Optional[str] = None
     problem_statement: Optional[str] = None
+    market_analysis_summary: Optional[str] = None
 
     class Config:
         from_attributes = True

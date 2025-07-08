@@ -50,6 +50,9 @@ class TechnologyService:
             self.db.commit()
             self.db.refresh(db_technology)
 
+            # Generate search keywords
+            await self.generate_search_keywords(db_technology.id)
+
             # Generate and save comparison axes
             axes_df, _ = await self.gpt_service.generate_comparison_axes(
                 technology_name=name,
@@ -325,7 +328,44 @@ class TechnologyService:
             logger.error(f"Error searching papers: {e}")
             self.db.rollback()
             return False        
+
+    async def _get_primary_technology_scores(self, primary_technology: Technology, axis_names: List[str]) -> Optional[Dict[str, float]]:
+        """
+        Helper to get or define scores for the primary technology against the given axes.
+        """
+    
+        logger.info(f"Attempting to define scores for primary technology '{primary_technology.name}' against axes: {axis_names}")
+        axes = primary_technology.comparison_axes;
+
+        if not axes:
+            logger.error("No comparison axes found")
+            return None
         
+        primary_scores = {}
+
+        for axis in axes:
+            try:
+                # Perform analysis with safeguards
+                abstract = primary_technology.abstract.strip() if primary_technology.abstract else primary_technology.name
+                if len(abstract) < 10:  # Skip if abstract is too short
+                    logger.warning(f"Skipping analysis for tech {primary_technology.id}: Abstract too short")
+                    continue
+
+                result = await self.gpt_service.analyze_technology_on_axis(
+                    abstract=abstract,
+                    axis_name=axis.axis_name,
+                    extreme1=axis.extreme1,
+                    extreme2=axis.extreme2,
+                    problem_statement=primary_technology.problem_statement
+                )
+                if result and "score" in result:
+                    primary_scores[axis.axis_name] = result.get("score", 0.0)
+
+            except Exception as analysis_error:
+                logger.error(f"Error analyzing primary technology {primary_technology.id} on axis {axis.axis_name}: {analysis_error}")
+                continue  # Continue with next axis instead of failing completely
+
+        return primary_scores        
 
     async def perform_market_analysis(self, technology_id: int) -> bool:
         """
@@ -403,6 +443,15 @@ class TechnologyService:
                             continue  # Continue with next axis instead of failing completely
 
             self.db.commit()
+            
+            # Generate and store market analysis summary
+            try:
+                await self.generate_and_store_market_analysis_summary(technology_id)
+                logger.info(f"Generated market analysis summary for technology {technology_id}")
+            except Exception as summary_error:
+                logger.error(f"Error generating market analysis summary: {summary_error}")
+                # Continue even if summary generation fails
+            
             return True
 
         except Exception as e:
@@ -412,123 +461,191 @@ class TechnologyService:
 
 
     async def perform_pca_analysis(self, technology_id: int) -> Optional[PCAResult]:
-        """
-        Perform PCA analysis on market analysis results
-        """
         try:
-            # Get market analysis data
+            primary_technology = self.db.query(Technology).get(technology_id)
+            if not primary_technology:
+                logger.error(f"Primary technology with ID {technology_id} not found.")
+                return None
+            if not primary_technology.name:
+                logger.error(f"Primary technology ID {technology_id} has no name, cannot proceed.")
+                return None
+
             analyses = self.db.query(MarketAnalysis).filter(
                 MarketAnalysis.technology_id == technology_id
             ).all()
 
-            if not analyses:
-                logger.error("No market analyses found for PCA")
-                return None
-
-            # Organize data into DataFrame
+            # Organize data for related technologies
             data_dict = {}
-            tech_names = {}
-            
+            # tech_names_map = {} # Maps original ID (related_tech_id) to name for clarity
+            all_axis_names = set() # To collect all unique axis names
+
             for analysis in analyses:
-                tech_id = analysis.related_technology_id
-                if tech_id not in data_dict:
-                    data_dict[tech_id] = {}
-                    tech = self.db.query(RelatedTechnology).get(tech_id)
-                    tech_names[tech_id] = tech.name
-
+                related_tech = self.db.query(RelatedTechnology).get(analysis.related_technology_id)
                 axis = self.db.query(ComparisonAxis).get(analysis.axis_id)
-                data_dict[tech_id][axis.axis_name] = analysis.score
 
-            # Convert to DataFrame and handle missing values
-            df = pd.DataFrame.from_dict(data_dict, orient='index')
-            df = df.fillna(0)  # Fill missing values with 0
+                if not related_tech or not related_tech.name or not axis or not axis.axis_name:
+                    logger.warning(f"Skipping analysis entry due to missing related tech/axis details: analysis_id {analysis.id}")
+                    continue
+
+                tech_name = related_tech.name
+                axis_name = axis.axis_name
+                all_axis_names.add(axis_name)
+
+                if tech_name not in data_dict:
+                    data_dict[tech_name] = {}
+                data_dict[tech_name][axis_name] = analysis.score
             
-            if df.empty:
-                logger.error("No valid data for PCA")
+            # Convert to DataFrame for related technologies
+            # Ensure all technologies have all axes, filling missing with 0
+            df_related = pd.DataFrame.from_dict(data_dict, orient='index')
+            df_related = df_related.reindex(columns=list(all_axis_names), fill_value=0)
+
+
+            # --- Include Primary Technology ---
+            primary_tech_scores = await self._get_primary_technology_scores(primary_technology, list(all_axis_names))
+            
+            df_combined = df_related # Start with related tech
+
+            if primary_tech_scores:
+                # Ensure primary_tech_scores keys (axis names) match all_axis_names
+                # Fill any missing axes for primary tech with 0 as well
+                primary_scores_full = {axis: primary_tech_scores.get(axis, 0) for axis in all_axis_names}
+                
+                primary_tech_series = pd.Series(primary_scores_full, name=primary_technology.name)
+                
+                if primary_technology.name in df_combined.index:
+                    logger.warning(f"Primary technology name '{primary_technology.name}' conflicts with a related technology name. Appending '_PRIMARY'.")
+                    df_combined.loc[f"{primary_technology.name}_PRIMARY"] = primary_tech_series
+                else:
+                    # df_combined = df_combined.append(primary_tech_series) # Old pandas
+                    df_combined = pd.concat([df_combined, primary_tech_series.to_frame().T])
+
+
+            if df_combined.empty:
+                logger.error("PCA DataFrame is empty. Cannot perform PCA.")
+                return None
+            if df_combined.shape[0] < 2:
+                 logger.warning(f"PCA DataFrame has only {df_combined.shape[0]} sample(s). PCA might not be meaningful or possible.")
+                 # You might decide to return None or a simplified result here
+                 if df_combined.shape[0] < 1 : return None # Definitely can't do PCA with 0 samples
+
+            # Ensure there are features (columns)
+            if df_combined.shape[1] == 0:
+                logger.error("PCA DataFrame has no features (axes). Cannot perform PCA.")
                 return None
 
             # Standardize the data
             scaler = StandardScaler()
-            scaled_data = scaler.fit_transform(df)
+            # fit_transform requires at least 1 sample.
+            scaled_data = scaler.fit_transform(df_combined)
 
-            # Perform PCA with 2 components (matching old implementation)
-            pca = PCA(n_components=2)
-            transformed_data = pca.fit_transform(scaled_data)
+            # Perform PCA
+            # n_components should be min(n_samples, n_features) if not specified, but we want 2D.
+            # If n_samples or n_features is less than 2, PCA(n_components=2) will fail.
+            n_samples = scaled_data.shape[0]
+            n_features = scaled_data.shape[1]
+            
+            # We need at least 2 components for a 2D plot.
+            # If n_features < 2, we can't get 2 principal components.
+            # If n_samples < 2 (after ensuring n_features >=2), PCA might still be problematic.
+            if n_features < 1: # Should have been caught by df_combined.shape[1] == 0
+                 logger.error(f"Not enough features ({n_features}) for PCA.")
+                 return None
+            
+            num_pca_components = min(2, n_samples, n_features)
+            if num_pca_components < 1: # Should not happen if previous checks pass
+                logger.error(f"Cannot determine valid number of PCA components ({num_pca_components}).")
+                return None
 
-            # Create results dictionary with technology names
+
+            pca = PCA(n_components=num_pca_components)
+            transformed_coordinates = pca.fit_transform(scaled_data)
+
+            # Create results dictionary
             transformed_dict = {
-                tech_names[tech_id]: transformed_data[i].tolist()
-                for i, tech_id in enumerate(data_dict.keys())
+                str(df_combined.index[i]): transformed_coordinates[i].tolist()
+                for i in range(len(df_combined.index))
             }
 
             # Store component information
-            components = []
-            for i, (ratio, loadings) in enumerate(zip(
-                pca.explained_variance_ratio_,
-                pca.components_
-            )):
-                # Create loadings dictionary for each axis
+            components_data = []
+            for i in range(pca.n_components_): # Iterate up to the actual number of components fitted
+                loadings_array = pca.components_[i]
                 axis_loadings = {
-                    col: float(loading)
-                    for col, loading in zip(df.columns, loadings)
+                    col: float(loading_val)
+                    for col, loading_val in zip(df_combined.columns, loadings_array)
                 }
-                
-                components.append({
+                components_data.append({
                     "component_number": i + 1,
-                    "explained_variance_ratio": float(ratio),
+                    "explained_variance_ratio": float(pca.explained_variance_ratio_[i]),
                     "loadings": axis_loadings,
-                    "description": f"Principal Component {i + 1}"
+                    "description": f"Principal Component {i + 1}" # Placeholder
                 })
+            
+            # If num_pca_components was 1, pad to have a second dummy component for 2D plot consistency if needed by frontend
+            # Or, frontend should handle 1D PCA data if that's a valid scenario.
+            # For now, assuming frontend expects 2D data or can handle fewer components.
 
-            # Create PCA result
-            pca_result = PCAResult(
+            pca_result_db = PCAResult(
                 technology_id=technology_id,
-                components=components,
+                components=components_data,
                 transformed_data=transformed_dict,
                 total_variance_explained=float(sum(pca.explained_variance_ratio_))
             )
 
-            self.db.add(pca_result)
+            self.db.add(pca_result_db)
             self.db.commit()
+            self.db.refresh(pca_result_db)
 
-            logger.info(f"PCA analysis completed. Total variance explained: {pca_result.total_variance_explained:.2%}")
-            return pca_result
+            logger.info(f"PCA analysis completed for '{primary_technology.name}'. Total variance explained: {pca_result_db.total_variance_explained:.2%}")
+            
+            # Trigger description generation (can be background)
+            await self.describe_pca_components(pca_result_db, primary_technology)
+
+            return pca_result_db
 
         except Exception as e:
-            logger.error(f"Error performing PCA analysis: {e}")
+            logger.error(f"Error in perform_pca_analysis for tech ID {technology_id}: {e}", exc_info=True)
             self.db.rollback()
             return None
 
 
     async def describe_pca_components(self, pca_result: PCAResult, technology: Technology) -> None:
-        """
-        Generate descriptions for PCA components
-        """
         try:
-            # Get the original loadings from PCA
-            df = pd.DataFrame.from_dict(pca_result.transformed_data, orient='index')
-            
-            for component in pca_result.components:
-                # Get loadings for this component
-                component_loadings = {
-                    axis: loading
-                    for axis, loading in zip(df.columns, component["loadings"])
-                }
+            if not pca_result.components:
+                logger.warning(f"No components found in PCA result ID {pca_result.id} to describe.")
+                return
+
+            updated_components_data = []
+            for component_data_dict in pca_result.components: # component_data_dict is one element from the list
+                loadings_dict = component_data_dict.get("loadings")
+                component_num = component_data_dict.get("component_number")
+
+                if not loadings_dict:
+                    logger.warning(f"No loadings found for component {component_num} in PCA result ID {pca_result.id}. Skipping description.")
+                    # Keep the original component data if loadings are missing
+                    updated_components_data.append(component_data_dict)
+                    continue
                 
-                # Get description from GPT
                 description = await self.gpt_service.describe_pca_component(
-                    component_loadings,
+                    loadings_dict, # This is already {axis_name: loading_value}
                     technology.problem_statement
                 )
                 
-                component["description"] = description
+                # Create a new dict or update a copy to avoid modifying the iterated list item directly if it's complex
+                new_component_data = component_data_dict.copy()
+                new_component_data["description"] = description
+                updated_components_data.append(new_component_data)
             
-            # Update PCA result
-            pca_result.components = pca_result.components
+            # Update the components in the database object
+            pca_result.components = updated_components_data
+            self.db.add(pca_result) # Mark as changed
             self.db.commit()
+            logger.info(f"Successfully described PCA components for PCA result ID {pca_result.id}")
 
         except Exception as e:
-            logger.error(f"Error describing PCA components: {e}")
+            logger.error(f"Error describing PCA components for PCA result ID {pca_result.id}: {e}", exc_info=True)
+  
 
     # Add new background task function:
     async def describe_pca_components_background(self, technology_id: int, pca_result_id: int):
@@ -643,4 +760,55 @@ class TechnologyService:
         except Exception as e:
             logger.error(f"Error performing clustering: {e}")
             self.db.rollback()
-            return False        
+            return False
+
+    async def generate_and_store_market_analysis_summary(self, technology_id: int) -> str:
+        """
+        Generate and store a summary insight of the technology's market analysis.
+        
+        Args:
+            technology_id: The ID of the technology to analyze
+            
+        Returns:
+            The generated summary insight or an error message
+        """
+        try:
+            # Get the technology
+            technology = self.db.query(Technology).filter(Technology.id == technology_id).first()
+            if not technology:
+                return "Technology not found"
+                
+            # Generate the summary using GPTService
+            summary = await self.gpt_service.generate_market_analysis_summary(technology_id)
+            
+            # Store the summary in the database
+            technology.market_analysis_summary = summary
+            self.db.commit()
+            
+            return summary
+        except Exception as e:
+            logger.error(f"Error generating market analysis summary: {str(e)}")
+            self.db.rollback()
+            return f"Error generating market analysis summary: {str(e)}"
+    
+    async def get_market_analysis_summary(self, technology_id: int) -> str:
+        """
+        Get the stored market analysis summary or generate it if not available.
+        
+        Args:
+            technology_id: The ID of the technology
+            
+        Returns:
+            The market analysis summary
+        """
+        # Get the technology
+        technology = self.db.query(Technology).filter(Technology.id == technology_id).first()
+        if not technology:
+            return "Technology not found"
+            
+        # If summary exists, return it
+        if technology.market_analysis_summary:
+            return technology.market_analysis_summary
+            
+        # Otherwise, generate and store it
+        return await self.generate_and_store_market_analysis_summary(technology_id)

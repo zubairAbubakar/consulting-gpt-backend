@@ -1,6 +1,0 @@
-{
-    "name": "Robotic surgery",
-    "Problem Statement": "This technology solves the problem of limitations in human precision, dexterity, and access in surgical procedures.",
-    "Explanation": "Robotic surgery involves surgeons using robotic arms and instruments to perform operations, offering enhanced precision and dexterity, as well as potentially smaller incisions and quicker recovery times.",
-    "path": "comp_axes.csv"
-}
