@@ -51,11 +51,47 @@ def db_session(TestingSessionLocal, test_engine):
         Base.metadata.drop_all(bind=test_engine)
 
 @pytest.fixture
-def client():
-    """Create FastAPI test client"""
-    from main import app
-    with TestClient(app) as test_client:
+def client(db_session):
+    """Create FastAPI test client for integration testing"""
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    from app.api.v1 import technologies
+    from app.db.database import get_db
+    
+    # Create a test-specific FastAPI app without lifespan events
+    test_app = FastAPI(
+        title="Consulting GPT API - Test",
+        description="Test version of backend API for Consulting GPT application",
+        version="1.0.0"
+    )
+    
+    # Configure CORS
+    test_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Include only the technologies router for testing
+    test_app.include_router(technologies.router, prefix="/api/v1/technologies", tags=["technologies"])
+    
+    @test_app.get("/")
+    async def root():
+        return {"message": "Welcome to Consulting GPT API - Test"}
+    
+    # Override the database dependency to use our test database
+    def override_get_db():
+        yield db_session
+    
+    test_app.dependency_overrides[get_db] = override_get_db
+    
+    with TestClient(test_app) as test_client:
         yield test_client
+    
+    # Clean up override after test
+    test_app.dependency_overrides.clear()
 
 @pytest.fixture
 async def async_client():
@@ -140,6 +176,15 @@ def mock_settings():
         mock_settings.DATABASE_URL = TEST_CONFIG["DATABASE_URL"]
         mock_settings.OPENAI_API_KEY = TEST_CONFIG["OPENAI_API_KEY"]
         mock_settings.SERPAPI_API_KEY = TEST_CONFIG["SERPAPI_API_KEY"]
+        # For integration tests, we need real database config
+        if os.getenv("TESTING") == "true":
+            mock_settings.POSTGRES_SERVER = os.getenv("POSTGRES_SERVER", "db-test")
+            mock_settings.POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+            mock_settings.POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
+            mock_settings.POSTGRES_DB = os.getenv("POSTGRES_DB", "consulting_gpt_test")
+            mock_settings.SQLALCHEMY_DATABASE_URI = f"postgresql://{mock_settings.POSTGRES_USER}:{mock_settings.POSTGRES_PASSWORD}@{mock_settings.POSTGRES_SERVER}/{mock_settings.POSTGRES_DB}"
+        else:
+            mock_settings.SQLALCHEMY_DATABASE_URI = TEST_CONFIG["DATABASE_URL"]
         yield mock_settings
 
 @pytest.fixture

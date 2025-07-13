@@ -13,6 +13,7 @@ services:
       - POSTGRES_DB=consulting_gpt_test
       - DATABASE_URL=postgresql://postgres:postgres@db-test/consulting_gpt_test
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
       - TESTING=true
     depends_on:
       - db-test
@@ -48,6 +49,7 @@ services:
       - POSTGRES_DB=consulting_gpt_test
       - DATABASE_URL=postgresql://postgres:postgres@db-test/consulting_gpt_test
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
       - TESTING=true
     depends_on:
       - db-test

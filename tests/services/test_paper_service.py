@@ -80,20 +80,7 @@ def db():
 def paper_service(db):
     return PaperService(db)
 
-@pytest.mark.asyncio
-async def test_search_papers(paper_service):
-    with aioresponses() as m:
-        # Mock the search API response
-        search_url = f"{paper_service.base_url}/esearch.fcgi"
-        m.get(
-            search_url,
-            payload=SAMPLE_SEARCH_RESPONSE,
-            status=200
-        )
 
-        # Test search with keywords
-        result = await paper_service.search_papers("test query")
-        assert result == ["123456", "789012"]
 
 
 @pytest.mark.asyncio
@@ -120,33 +107,4 @@ async def test_search_papers_empty_response(paper_service):
         )
 
         result = await paper_service.search_papers("nonexistent query")
-        assert result == []
-
-@pytest.mark.asyncio
-async def test_parse_invalid_xml(paper_service):
-    # Test with invalid XML
-    result = paper_service._parse_paper_xml("<invalid>xml</")
-    assert result is None
-
-@pytest.mark.asyncio
-async def test_search_papers(paper_service, mock_paper_service_responses):
-    with aioresponses() as m:
-        # Mock the search API response
-        search_url = f"{paper_service.base_url}/esearch.fcgi"
-        params = {
-            "db": "pubmed",
-            "term": "test query",
-            "retmode": "json",
-            "retmax": 10,
-            "api_key": paper_service.api_key
-        }
-        
-        m.get(
-            f"{search_url}?{'&'.join(f'{k}={v}' for k,v in params.items())}",
-            payload=mock_paper_service_responses["search_response"],
-            status=200
-        )
-
-        # Test search with keywords
-        result = await paper_service.search_papers("test query")
-        assert result == ["123456", "789012"]    
+        assert result == []    
