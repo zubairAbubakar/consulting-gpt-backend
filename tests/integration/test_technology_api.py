@@ -11,9 +11,13 @@ class TestTechnologyAPIIntegration:
     @pytest.fixture(autouse=True)
     def setup_database(self, db_session: Session):
         """Setup test database with clean state"""
-        # Clear any existing data
-        db_session.query(Technology).delete()
-        db_session.commit()
+        # Clear any existing data (tables are created in conftest.py)
+        try:
+            db_session.query(Technology).delete()
+            db_session.commit()
+        except Exception:
+            # If table doesn't exist or other issues, just commit to ensure clean state
+            db_session.rollback()
         self.db = db_session
 
     def test_create_technology_integration(self, client: TestClient):
@@ -106,8 +110,12 @@ class TestTechnologyDatabaseIntegration:
     @pytest.fixture(autouse=True)
     def setup_database(self, db_session: Session):
         """Setup test database with clean state"""
-        db_session.query(Technology).delete()
-        db_session.commit()
+        try:
+            db_session.query(Technology).delete()
+            db_session.commit()
+        except Exception:
+            # If table doesn't exist or other issues, just commit to ensure clean state
+            db_session.rollback()
         self.db = db_session
 
     def test_technology_crud_operations(self):
