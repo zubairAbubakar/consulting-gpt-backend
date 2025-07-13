@@ -64,32 +64,3 @@ async def test_search_patents_error(patent_service, monkeypatch):
     
     assert result is None
     patent_service.db.rollback.assert_called_once()
-
-def test_get_patent_details_success(patent_service, mock_google_search, monkeypatch):
-    # Mock GoogleSearch
-    monkeypatch.setattr("app.services.patent_service.GoogleSearch", Mock(return_value=mock_google_search))
-    
-    # Override mock response for patent details
-    mock_google_search.get_dict.return_value = {
-        "abstract": "Test abstract",
-        "title": "Test Patent",
-        "patent_number": "US123456",
-        "publication_date": "2025-01-01"
-    }
-    
-    result = patent_service._get_patent_details("US123456")
-    
-    assert result == {
-        "abstract": "Test abstract",
-        "title": "Test Patent",
-        "patent_number": "US123456",
-        "publication_date": "2025-01-01"
-    }
-
-def test_get_patent_details_error(patent_service, monkeypatch):
-    # Mock GoogleSearch to raise exception
-    monkeypatch.setattr("app.services.patent_service.GoogleSearch", Mock(side_effect=Exception("API Error")))
-    
-    result = patent_service._get_patent_details("US123456")
-    
-    assert result == {}

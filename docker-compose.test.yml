@@ -1,0 +1,62 @@
+services:
+  backend-test:
+    build:
+      context: .
+      target: development
+    container_name: consulting-gpt-backend-test
+    volumes:
+      - .:/app
+    environment:
+      - POSTGRES_SERVER=db-test
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=consulting_gpt_test
+      - DATABASE_URL=postgresql://postgres:postgres@db-test/consulting_gpt_test
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - TESTING=true
+    depends_on:
+      - db-test
+    networks:
+      - consulting-gpt-test-network
+    command: ['python', '-m', 'pytest', '-v']
+
+  db-test:
+    image: postgres:15
+    container_name: consulting-gpt-db-test
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=consulting_gpt_test
+    ports:
+      - '5433:5432' # Different port to avoid conflicts
+    networks:
+      - consulting-gpt-test-network
+    tmpfs:
+      - /var/lib/postgresql/data # Use tmpfs for faster test database
+
+  backend-test-watch:
+    build:
+      context: .
+      target: development
+    container_name: consulting-gpt-backend-test-watch
+    volumes:
+      - .:/app
+    environment:
+      - POSTGRES_SERVER=db-test
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=consulting_gpt_test
+      - DATABASE_URL=postgresql://postgres:postgres@db-test/consulting_gpt_test
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - TESTING=true
+    depends_on:
+      - db-test
+    networks:
+      - consulting-gpt-test-network
+    command: ['python', '-m', 'pytest', '-v', '--tb=short', '-x', '--lf']
+
+networks:
+  consulting-gpt-test-network:
+    driver: bridge

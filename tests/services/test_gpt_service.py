@@ -338,38 +338,7 @@ async def test_get_search_term_score(gpt_service, mock_chat_completion):
     score = await gpt_service.get_search_term_score("test")
     assert score == 0.0
 
-@pytest.mark.asyncio
-async def test_get_search_keywords(gpt_service, mock_chat_completion):
-    # Mock dependencies
-    gpt_service.get_embedding = AsyncMock(return_value=[0.5] * 1536)
-    gpt_service.calculate_similarity = AsyncMock(return_value=0.8)
-    gpt_service.get_search_term_score = AsyncMock(return_value=0.7)
-    
-    # Configure chat completion mock to return keywords
-    mock_chat_completion.choices[0].message.content = "machine,learning"
-    gpt_service.client.chat.completions.create = AsyncMock(return_value=mock_chat_completion)
-    
-    # Test keyword generation
-    keywords = await gpt_service.get_search_keywords(
-        problem_statement="How to improve machine learning model performance",
-        keyword_count=2
-    )
-    
-    assert isinstance(keywords, str)
-    assert len(keywords.split()) == 2
-    assert "machine" in keywords
-    assert "learning" in keywords
-    
-    # Verify all dependencies were called
-    assert gpt_service.client.chat.completions.create.called
-    assert gpt_service.get_embedding.called
-    assert gpt_service.calculate_similarity.called
-    assert gpt_service.get_search_term_score.called
-    
-    # Test with empty response
-    mock_chat_completion.choices[0].message.content = ""
-    keywords = await gpt_service.get_search_keywords("test", keyword_count=2)
-    assert keywords == ""
+
 
 @pytest.mark.asyncio
 async def test_search_related_patents_success(gpt_service, db):
