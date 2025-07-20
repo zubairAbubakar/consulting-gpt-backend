@@ -7,6 +7,8 @@ from bs4 import BeautifulSoup
 from typing import List, Dict, Tuple
 from requests.exceptions import RequestException
 from time import sleep
+import xml.etree.ElementTree as ET
+from urllib.parse import quote
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -156,7 +158,8 @@ class MedicalAssessmentService:
                             title=title,
                             link=link,
                             relevance_score=score,
-                            content=content
+                            content=content,
+                            source="GuidelineCentral"
                         )
                         guidelines_list.append(guideline)
                         
@@ -372,8 +375,8 @@ class MedicalAssessmentService:
             self.db.add(assessment)
             self.db.flush()  # Get ID without committing
 
-            # Step 2: Get guidelines
-            guidelines_list = await self.get_medical_guidelines(
+            # Step 2: Get guidelines from PubMed (official sources)
+            guidelines_list = await self.get_medical_guidelines_from_pubmed(
                 medical_association,
                 technology_name,
                 problem_statement
@@ -420,3 +423,169 @@ class MedicalAssessmentService:
             logger.error(f"Error in medical assessment: {e}")
             self.db.rollback()
             raise
+
+    async def _fetch_pubmed_guidelines(self, problem_statement: str) -> List[Guidelines]:
+        """
+        Query PubMed API for clinical guidelines and systematic reviews
+        """
+        try:
+            guidelines_list = []
+            
+            # Step 1: Search PubMed for clinical guidelines
+            search_query = f'("{problem_statement}"[MeSH Terms] OR "{problem_statement}"[All Fields]) AND ("practice guideline"[Publication Type] OR "guideline"[Publication Type] OR "clinical guideline"[All Fields])'
+            encoded_query = quote(search_query)
+            
+            # PubMed E-utilities search URL
+            search_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={encoded_query}&retmax=10&retmode=json"
+            
+            async with aiohttp.ClientSession() as session:
+                # Get PMIDs
+                async with session.get(search_url) as response:
+                    if response.status == 200:
+                        search_data = await response.json()
+                        pmids = search_data.get('esearchresult', {}).get('idlist', [])
+                        logger.info(f"Found {len(pmids)} PubMed articles for: {problem_statement}")
+                        
+                        if not pmids:
+                            return guidelines_list
+                        
+                        # Step 2: Fetch detailed information for each PMID
+                        pmids_str = ','.join(pmids[:5])  # Limit to top 5 results
+                        summary_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={pmids_str}&retmode=json"
+                        
+                        async with session.get(summary_url) as summary_response:
+                            if summary_response.status == 200:
+                                summary_data = await summary_response.json()
+                                
+                                # Step 3: Process each article
+                                for pmid in pmids[:5]:
+                                    try:
+                                        article_data = summary_data['result'][pmid]
+                                        title = article_data.get('title', 'No title available')
+                                        authors = ', '.join([author['name'] for author in article_data.get('authors', [])[:3]])
+                                        journal = article_data.get('fulljournalname', 'Unknown journal')
+                                        pub_date = article_data.get('pubdate', 'Unknown date')
+                                        
+                                        # Create PubMed URL
+                                        link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+                                        
+                                        # Step 4: Fetch abstract
+                                        abstract_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pmid}&retmode=xml"
+                                        async with session.get(abstract_url) as abstract_response:
+                                            if abstract_response.status == 200:
+                                                abstract_xml = await abstract_response.text()
+                                                abstract_text = self._extract_abstract_from_xml(abstract_xml)
+                                            else:
+                                                abstract_text = "Abstract not available"
+                                        
+                                        # Step 5: Score relevance using GPT
+                                        relevance_score = await self._score_guideline_relevance(title, abstract_text, problem_statement)
+                                        
+                                        # Create guideline object
+                                        guideline = Guidelines(
+                                            title=title,
+                                            link=link,
+                                            relevance_score=relevance_score,
+                                            content=f"Source: PubMed\nJournal: {journal}\nAuthors: {authors}\nDate: {pub_date}\n\nAbstract: {abstract_text}",
+                                            source="PubMed"
+                                        )
+                                        guidelines_list.append(guideline)
+                                        
+                                        # Add delay to respect API limits
+                                        await asyncio.sleep(0.5)
+                                        
+                                    except Exception as e:
+                                        logger.error(f"Error processing PubMed article {pmid}: {e}")
+                                        continue
+                    else:
+                        logger.error(f"PubMed search failed with status: {response.status}")
+            
+            # Sort by relevance score
+            guidelines_list.sort(key=lambda x: x.relevance_score, reverse=True)
+            logger.info(f"Successfully fetched {len(guidelines_list)} guidelines from PubMed")
+            return guidelines_list
+            
+        except Exception as e:
+            logger.error(f"Error fetching PubMed guidelines: {e}")
+            return []
+
+    def _extract_abstract_from_xml(self, xml_content: str) -> str:
+        """Extract abstract text from PubMed XML response"""
+        try:
+            root = ET.fromstring(xml_content)
+            abstract_texts = []
+            
+            # Find abstract sections
+            for abstract in root.findall('.//Abstract/AbstractText'):
+                text = abstract.text or ''
+                label = abstract.get('Label', '')
+                if label:
+                    abstract_texts.append(f"{label}: {text}")
+                else:
+                    abstract_texts.append(text)
+            
+            return ' '.join(abstract_texts) if abstract_texts else "No abstract available"
+            
+        except ET.ParseError as e:
+            logger.error(f"Error parsing PubMed XML: {e}")
+            return "Abstract parsing error"
+
+    async def _score_guideline_relevance(self, title: str, content: str, problem_statement: str) -> float:
+        """Score how relevant a guideline is to the problem statement"""
+        try:
+            system_prompt = (
+                f"Given this medical problem statement: '{problem_statement}', "
+                "rate how relevant this medical guideline is on a scale of 0.0 to 1.0. "
+                "Consider the title and abstract content. "
+                "Return only a number between 0.0 and 1.0."
+            )
+            
+            user_prompt = f"Title: {title}\n\nContent: {content[:1000]}..."  # Limit content length
+            
+            score_str = await self.gpt_service._create_chat_completion(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.0
+            )
+            
+            # Parse the score
+            try:
+                score = float(score_str.strip())
+                return max(0.0, min(1.0, score))  # Clamp between 0 and 1
+            except ValueError:
+                logger.warning(f"Invalid score returned: {score_str}, defaulting to 0.5")
+                return 0.5
+                
+        except Exception as e:
+            logger.error(f"Error scoring guideline relevance: {e}")
+            return 0.0
+
+    async def get_medical_guidelines_from_pubmed(
+        self,
+        medical_association: str,
+        technology_name: str,
+        problem_statement: str
+    ) -> List[Guidelines]:
+        """
+        Fetch medical guidelines from PubMed API (replaces Selenium scraping)
+        """
+        try:
+            logger.info(f"Fetching guidelines from PubMed for: {problem_statement}")
+            
+            # Fetch guidelines from PubMed
+            guidelines_list = await self._fetch_pubmed_guidelines(problem_statement)
+            
+            if not guidelines_list:
+                logger.warning("No guidelines found in PubMed, creating placeholder")
+                # Return empty list or placeholder
+                return []
+            
+            # Return top 3 most relevant guidelines
+            top_guidelines = guidelines_list[:3]
+            logger.info(f"Returning {len(top_guidelines)} top guidelines from PubMed")
+            
+            return top_guidelines
+            
+        except Exception as e:
+            logger.error(f"Error in PubMed guidelines fetch: {e}")
+            return []
