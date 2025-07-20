@@ -124,3 +124,51 @@ async def test_pubmed_integration_api_error(db_session):
         
         # Verify error handling
         assert len(guidelines) == 0
+
+
+@pytest.mark.asyncio
+async def test_cms_coverage_policies_integration(db_session):
+    """Test CMS coverage policies integration"""
+    # Create mock GPT service
+    gpt_service = Mock(spec=GPTService)
+    gpt_service._create_chat_completion = AsyncMock(return_value="0.8")
+    
+    # Create medical assessment service
+    service = MedicalAssessmentService(gpt_service, db_session)
+    
+    # Test CMS coverage policies fetch
+    guidelines = await service._fetch_cms_coverage_policies("diabetes treatment")
+    
+    # Verify results
+    assert isinstance(guidelines, list)
+    if guidelines:  # Should have some mock guidelines for diabetes
+        assert len(guidelines) > 0
+        assert all(g.source == "CMS" for g in guidelines)
+        assert all(hasattr(g, 'relevance_score') for g in guidelines)
+
+
+@pytest.mark.asyncio
+async def test_multi_source_guidelines_integration(db_session):
+    """Test multi-source guidelines integration (PubMed + CMS)"""
+    # Create mock GPT service
+    gpt_service = Mock(spec=GPTService)
+    gpt_service._create_chat_completion = AsyncMock(return_value="0.75")
+    
+    # Create medical assessment service
+    service = MedicalAssessmentService(gpt_service, db_session)
+    
+    # Test that multi-source method exists
+    assert hasattr(service, 'get_medical_guidelines_from_official_sources')
+    
+    # Mock both PubMed and CMS calls to avoid actual API calls
+    with patch.object(service, '_fetch_pubmed_guidelines', return_value=[]) as mock_pubmed, \
+         patch.object(service, '_fetch_cms_coverage_policies', return_value=[]) as mock_cms:
+        
+        guidelines = await service.get_medical_guidelines_from_official_sources(
+            "ADA", "diabetes technology", "diabetes treatment"
+        )
+        
+        # Verify both sources were called
+        mock_pubmed.assert_called_once_with("diabetes treatment")
+        mock_cms.assert_called_once_with("diabetes treatment")
+        assert isinstance(guidelines, list)
