@@ -22,6 +22,7 @@ from app.models.fee_schedule import FeeSchedule
 from app.models.medical_association import MedicalAssociation
 from app.models.technology import Guidelines, MedicalAssessment, BillableItem
 from app.services.gpt_service import GPTService
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -590,125 +591,147 @@ class MedicalAssessmentService:
             logger.error(f"Error in PubMed guidelines fetch: {e}")
             return []
 
-    async def _fetch_cms_coverage_policies(self, problem_statement: str) -> List[Guidelines]:
+    async def _fetch_icd10_guidelines(self, problem_statement: str) -> List[Guidelines]:
         """
-        Query CMS Coverage Database for National Coverage Determinations (NCDs) and Local Coverage Determinations (LCDs)
+        Query BioPortal ICD-10 API for standardized medical conditions and treatment guidelines
         """
         try:
             guidelines_list = []
             
-            # Search for coverage policies related to the problem statement
-            # Note: This is a simplified search - CMS API has limited search capabilities
-            search_terms = problem_statement.replace(' ', '+')
+            # BioPortal API configuration
+            # You'll need to register for a free API key at https://bioportal.bioontology.org/
+            api_key = settings.BIOPORTAL_API_KEY
             
-            # CMS Coverage Database search URLs
-            # Note: CMS doesn't have a comprehensive REST API, so we'll search their coverage database
-            cms_search_url = f"https://www.cms.gov/medicare-coverage-database/search/advanced-search.aspx?SearchType=Advanced&CoverageSelection=Both&NCDId=&LocalCoverageArticleId=&CoverageLocalId=&ContractorName=&ContractorNumber=&SortBy=Relevance&bc=gAAAACAAAAAA&SearchTerm={search_terms}"
+            if api_key == 'test-key':
+                logger.warning("BioPortal API key not configured for production, using test mode")
+                return []
+            
+            # Search ICD-10-CM ontology for relevant medical conditions
+            search_url = "https://data.bioontology.org/search"
+            
+            # Extract key medical terms from problem statement for better search
+            search_terms = await self._extract_medical_terms(problem_statement)
             
             async with aiohttp.ClientSession() as session:
-                try:
-                    # For now, we'll use a mock implementation since CMS doesn't have a proper API
-                    # In a real implementation, you'd need to scrape or use alternative methods
-                    logger.info(f"Searching CMS coverage policies for: {problem_statement}")
-                    
-                    # Mock CMS coverage policies based on common medical conditions
-                    mock_policies = await self._get_mock_cms_policies(problem_statement)
-                    
-                    for policy in mock_policies:
-                        # Score relevance using GPT
-                        relevance_score = await self._score_cms_coverage_relevance(
-                            policy['title'], 
-                            policy['summary'], 
-                            problem_statement
-                        )
+                for term in search_terms[:3]:  # Search top 3 medical terms
+                    try:
+                        params = {
+                            'q': term,
+                            'ontologies': 'ICD10CM',  # ICD-10 Clinical Modification
+                            'include': 'prefLabel,definition,synonym',
+                            'page': 1,
+                            'pagesize': 5,
+                            'apikey': api_key
+                        }
                         
-                        guideline = Guidelines(
-                            title=policy['title'],
-                            link=policy['link'],
-                            relevance_score=relevance_score,
-                            content=policy['summary'],
-                            source="CMS"
-                        )
-                        guidelines_list.append(guideline)
+                        async with session.get(search_url, params=params) as response:
+                            if response.status == 200:
+                                search_data = await response.json()
+                                
+                                # Process each ICD-10 code found
+                                for result in search_data.get('collection', []):
+                                    try:
+                                        # Extract ICD-10 information
+                                        icd_code = self._extract_icd_code(result.get('@id', ''))
+                                        pref_label = result.get('prefLabel', 'Unknown condition')
+                                        definition = result.get('definition', ['No definition available'])
+                                        definition_text = definition[0] if isinstance(definition, list) else str(definition)
+                                        
+                                        # Get synonyms
+                                        synonyms = result.get('synonym', [])
+                                        synonym_text = ', '.join(synonyms[:3]) if synonyms else 'No synonyms'
+                                        
+                                        # Create content with ICD-10 information
+                                        content = f"ICD-10 Code: {icd_code}\nCondition: {pref_label}\nDefinition: {definition_text}\nSynonyms: {synonym_text}"
+                                        
+                                        # Score relevance using GPT
+                                        relevance_score = await self._score_icd10_relevance(
+                                            pref_label, 
+                                            definition_text, 
+                                            problem_statement
+                                        )
+                                        
+                                        # Create guideline object
+                                        guideline = Guidelines(
+                                            title=f"ICD-10: {pref_label} ({icd_code})",
+                                            link=f"https://bioportal.bioontology.org/ontologies/ICD10CM?p=classes&conceptid={result.get('@id', '')}",
+                                            relevance_score=relevance_score,
+                                            content=content,
+                                            source="ICD-10"
+                                        )
+                                        guidelines_list.append(guideline)
+                                        
+                                    except Exception as e:
+                                        logger.error(f"Error processing ICD-10 result: {e}")
+                                        continue
+                                        
+                            else:
+                                logger.warning(f"BioPortal search for '{term}' returned status {response.status}")
+                                
+                        # Add delay to respect API limits
+                        await asyncio.sleep(0.5)
                         
-                except Exception as e:
-                    logger.error(f"Error fetching CMS coverage policies: {e}")
+                    except Exception as e:
+                        logger.error(f"Error searching BioPortal for term '{term}': {e}")
+                        continue
             
             # Sort by relevance score
             guidelines_list.sort(key=lambda x: x.relevance_score, reverse=True)
-            logger.info(f"Successfully fetched {len(guidelines_list)} policies from CMS")
+            logger.info(f"Successfully fetched {len(guidelines_list)} ICD-10 classifications")
             
-            return guidelines_list
+            return guidelines_list[:5]  # Return top 5 most relevant
             
         except Exception as e:
-            logger.error(f"Error in CMS coverage policy fetch: {e}")
+            logger.error(f"Error fetching ICD-10 guidelines: {e}")
             return []
 
-    async def _get_mock_cms_policies(self, problem_statement: str) -> List[Dict]:
-        """
-        Generate mock CMS policies based on problem statement
-        In production, this would query actual CMS databases
-        """
-        # Common medical conditions and their CMS coverage policies
-        cms_policies_db = {
-            "diabetes": [
-                {
-                    "title": "Blood Glucose Monitors and Test Strips",
-                    "link": "https://www.cms.gov/medicare-coverage-database/view/ncd.aspx?NCDId=95",
-                    "summary": "Medicare covers blood glucose monitors and test strips for patients with diabetes. Coverage includes both insulin and non-insulin dependent diabetes patients. Frequency limitations apply based on insulin dependency status."
-                },
-                {
-                    "title": "Diabetic Shoes and Custom Molded Inserts",
-                    "link": "https://www.cms.gov/medicare-coverage-database/view/ncd.aspx?NCDId=130",
-                    "summary": "Medicare covers therapeutic shoes and inserts for diabetic patients with certain conditions including peripheral neuropathy with evidence of callus formation, foot deformity, or history of foot ulceration."
-                }
-            ],
-            "cardiac": [
-                {
-                    "title": "Cardiac Rehabilitation Programs",
-                    "link": "https://www.cms.gov/medicare-coverage-database/view/ncd.aspx?NCDId=20",
-                    "summary": "Medicare covers cardiac rehabilitation services for patients with documented diagnosis of acute myocardial infarction, coronary artery bypass surgery, heart valve repair or replacement, or heart transplantation."
-                }
-            ],
-            "cancer": [
-                {
-                    "title": "Chemotherapy Administration",
-                    "link": "https://www.cms.gov/medicare-coverage-database/view/ncd.aspx?NCDId=110",
-                    "summary": "Medicare covers chemotherapy administration for cancer treatment when provided by qualified healthcare providers in appropriate settings with documented medical necessity."
-                }
-            ]
-        }
-        
-        # Match problem statement to relevant policies
-        problem_lower = problem_statement.lower()
-        relevant_policies = []
-        
-        for condition, policies in cms_policies_db.items():
-            if condition in problem_lower:
-                relevant_policies.extend(policies)
-        
-        # If no specific match, return generic medical device policy
-        if not relevant_policies:
-            relevant_policies = [{
-                "title": "Medical Device Coverage General Guidelines",
-                "link": "https://www.cms.gov/medicare-coverage-database/view/ncd.aspx?NCDId=100",
-                "summary": "Medicare covers medical devices when they are reasonable and necessary for the diagnosis or treatment of illness or injury, meet FDA requirements, and are prescribed by qualified healthcare providers."
-            }]
-        
-        return relevant_policies
+    async def _extract_medical_terms(self, problem_statement: str) -> List[str]:
+        """Extract key medical terms from problem statement for ICD-10 search"""
+        try:
+            system_prompt = (
+                "Extract 3-5 key medical terms, conditions, or symptoms from this problem statement. "
+                "Focus on specific medical conditions, anatomical terms, or clinical symptoms. "
+                "Return as a comma-separated list of terms, no explanations."
+            )
+            
+            response = await self.gpt_service._create_chat_completion(
+                system_prompt=system_prompt,
+                user_prompt=problem_statement,
+                temperature=0.0
+            )
+            
+            # Parse the response into a list of terms
+            terms = [term.strip() for term in response.split(',') if term.strip()]
+            return terms[:5]  # Limit to 5 terms
+            
+        except Exception as e:
+            logger.error(f"Error extracting medical terms: {e}")
+            # Fallback to simple keyword extraction
+            return [problem_statement]
 
-    async def _score_cms_coverage_relevance(self, title: str, summary: str, problem_statement: str) -> float:
-        """Score how relevant a CMS coverage policy is to the problem statement"""
+    def _extract_icd_code(self, icd_uri: str) -> str:
+        """Extract ICD-10 code from BioPortal URI"""
+        try:
+            # BioPortal URIs typically end with the ICD code
+            # Example: http://purl.bioontology.org/ontology/ICD10CM/E11.9
+            if '/' in icd_uri:
+                return icd_uri.split('/')[-1]
+            return icd_uri
+        except Exception:
+            return "Unknown"
+
+    async def _score_icd10_relevance(self, condition: str, definition: str, problem_statement: str) -> float:
+        """Score how relevant an ICD-10 condition is to the problem statement"""
         try:
             system_prompt = (
                 f"Given this medical problem statement: '{problem_statement}', "
-                "rate how relevant this Medicare coverage policy is on a scale of 0.0 to 1.0. "
-                "Consider both the policy title and summary. "
-                "Higher scores for policies that directly relate to the medical condition or treatment. "
+                "rate how relevant this ICD-10 medical condition is on a scale of 0.0 to 1.0. "
+                "Consider the condition name and its definition. "
+                "Higher scores for conditions that directly relate to the medical problem. "
                 "Return only a number between 0.0 and 1.0."
             )
             
-            user_prompt = f"Policy Title: {title}\n\nPolicy Summary: {summary}"
+            user_prompt = f"Condition: {condition}\n\nDefinition: {definition}"
             
             score_str = await self.gpt_service._create_chat_completion(
                 system_prompt=system_prompt,
@@ -721,12 +744,14 @@ class MedicalAssessmentService:
                 score = float(score_str.strip())
                 return max(0.0, min(1.0, score))  # Clamp between 0 and 1
             except ValueError:
-                logger.warning(f"Invalid CMS score returned: {score_str}, defaulting to 0.5")
+                logger.warning(f"Invalid ICD-10 score returned: {score_str}, defaulting to 0.5")
                 return 0.5
                 
         except Exception as e:
-            logger.error(f"Error scoring CMS coverage relevance: {e}")
+            logger.error(f"Error scoring ICD-10 relevance: {e}")
             return 0.0
+
+
 
     async def get_medical_guidelines_from_official_sources(
         self,
@@ -735,8 +760,8 @@ class MedicalAssessmentService:
         problem_statement: str
     ) -> List[Guidelines]:
         """
-        Fetch medical guidelines from multiple official sources (PubMed + CMS)
-        This replaces the single-source approach with multi-source integration
+        Fetch medical guidelines from multiple official sources (PubMed + ICD-10)
+        API-only approach, no scraping
         """
         try:
             logger.info(f"Fetching guidelines from multiple official sources for: {problem_statement}")
@@ -747,10 +772,10 @@ class MedicalAssessmentService:
             pubmed_guidelines = await self._fetch_pubmed_guidelines(problem_statement)
             all_guidelines.extend(pubmed_guidelines)
             
-            # Source 2: CMS for coverage policies
-            logger.info("Fetching from CMS...")
-            cms_guidelines = await self._fetch_cms_coverage_policies(problem_statement)
-            all_guidelines.extend(cms_guidelines)
+            # Source 2: ICD-10 for standardized medical terminology and condition mapping
+            logger.info("Fetching from ICD-10 BioPortal...")
+            icd10_guidelines = await self._fetch_icd10_guidelines(problem_statement)
+            all_guidelines.extend(icd10_guidelines)
             
             if not all_guidelines:
                 logger.warning("No guidelines found from any official source")

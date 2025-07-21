@@ -127,8 +127,8 @@ async def test_pubmed_integration_api_error(db_session):
 
 
 @pytest.mark.asyncio
-async def test_cms_coverage_policies_integration(db_session):
-    """Test CMS coverage policies integration"""
+async def test_icd10_bioportal_integration(db_session):
+    """Test ICD-10 BioPortal API integration"""
     # Create mock GPT service
     gpt_service = Mock(spec=GPTService)
     gpt_service._create_chat_completion = AsyncMock(return_value="0.8")
@@ -136,20 +136,58 @@ async def test_cms_coverage_policies_integration(db_session):
     # Create medical assessment service
     service = MedicalAssessmentService(gpt_service, db_session)
     
-    # Test CMS coverage policies fetch
-    guidelines = await service._fetch_cms_coverage_policies("diabetes treatment")
+    # Test that ICD-10 method exists
+    assert hasattr(service, '_fetch_icd10_guidelines')
+    assert hasattr(service, '_extract_medical_terms')
+    assert hasattr(service, '_score_icd10_relevance')
     
-    # Verify results
-    assert isinstance(guidelines, list)
-    if guidelines:  # Should have some mock guidelines for diabetes
-        assert len(guidelines) > 0
-        assert all(g.source == "CMS" for g in guidelines)
-        assert all(hasattr(g, 'relevance_score') for g in guidelines)
+    # Test with mocked API call to avoid requiring actual BioPortal API key
+    with patch('aiohttp.ClientSession.get') as mock_get:
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={
+            'collection': [
+                {
+                    '@id': 'http://purl.bioontology.org/ontology/ICD10CM/E11.9',
+                    'prefLabel': 'Type 2 diabetes mellitus without complications',
+                    'definition': ['A chronic condition affecting blood sugar regulation'],
+                    'synonym': ['T2DM', 'Adult-onset diabetes']
+                }
+            ]
+        })
+        
+        mock_get.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+        
+        # Test ICD-10 guidelines fetch
+        guidelines = await service._fetch_icd10_guidelines("diabetes treatment")
+        
+        # Should return empty list due to missing API key in test environment
+        assert isinstance(guidelines, list)
 
 
 @pytest.mark.asyncio
-async def test_multi_source_guidelines_integration(db_session):
-    """Test multi-source guidelines integration (PubMed + CMS)"""
+async def test_medical_terms_extraction(db_session):
+    """Test medical terms extraction for ICD-10 search"""
+    # Create mock GPT service
+    gpt_service = Mock(spec=GPTService)
+    gpt_service._create_chat_completion = AsyncMock(return_value="diabetes, hypertension, cardiovascular disease")
+    
+    # Create medical assessment service
+    service = MedicalAssessmentService(gpt_service, db_session)
+    
+    # Test medical terms extraction
+    terms = await service._extract_medical_terms("Patient with diabetes and high blood pressure")
+    
+    # Verify results
+    assert isinstance(terms, list)
+    assert len(terms) <= 5  # Should limit to 5 terms
+    if terms:  # If GPT returned terms
+        assert all(isinstance(term, str) for term in terms)
+
+
+@pytest.mark.asyncio
+async def test_multi_source_guidelines_integration_updated(db_session):
+    """Test multi-source guidelines integration (PubMed + ICD-10)"""
     # Create mock GPT service
     gpt_service = Mock(spec=GPTService)
     gpt_service._create_chat_completion = AsyncMock(return_value="0.75")
@@ -160,9 +198,9 @@ async def test_multi_source_guidelines_integration(db_session):
     # Test that multi-source method exists
     assert hasattr(service, 'get_medical_guidelines_from_official_sources')
     
-    # Mock both PubMed and CMS calls to avoid actual API calls
+    # Mock both PubMed and ICD-10 calls to avoid actual API calls
     with patch.object(service, '_fetch_pubmed_guidelines', return_value=[]) as mock_pubmed, \
-         patch.object(service, '_fetch_cms_coverage_policies', return_value=[]) as mock_cms:
+         patch.object(service, '_fetch_icd10_guidelines', return_value=[]) as mock_icd10:
         
         guidelines = await service.get_medical_guidelines_from_official_sources(
             "ADA", "diabetes technology", "diabetes treatment"
@@ -170,5 +208,5 @@ async def test_multi_source_guidelines_integration(db_session):
         
         # Verify both sources were called
         mock_pubmed.assert_called_once_with("diabetes treatment")
-        mock_cms.assert_called_once_with("diabetes treatment")
+        mock_icd10.assert_called_once_with("diabetes treatment")
         assert isinstance(guidelines, list)

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # External APIs
     OPENAI_API_KEY: str = "test-key"  # Default for testing
     SERPAPI_API_KEY: str = "test-key"  # Default for testing
+    BIOPORTAL_API_KEY: str = "test-key"  # Default for testing, get free key from bioportal.bioontology.org
     
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000"]  # Frontend URL
