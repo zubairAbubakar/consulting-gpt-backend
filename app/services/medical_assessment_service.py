@@ -183,7 +183,7 @@ class MedicalAssessmentService:
             raise
 
     async def _get_hcpcs_codes(self, recommendations: str) -> List[str]:
-        """Extract HCPCS codes from recommendations"""
+        """Extract HCPCS codes from recommendations (legacy method)"""
         system_prompt = (
             "Your are a medical domain expert. Given these medical recommendations, "
             "list out all of the HCPCS codes involved in such a prescription to help get the fees. "
@@ -198,6 +198,166 @@ class MedicalAssessmentService:
         # Split response into list of codes and return first 10
         codes = [code.strip() for code in response.split(',') if code.strip()]
         return codes[:10]
+
+    async def _get_evidence_based_codes(self, guidelines: List[Guidelines], problem_statement: str) -> List[str]:
+        """
+        Generate HCPCS codes based on official sources + GPT validation
+        More accurate than text-based generation
+        """
+        try:
+            logger.info(f"Generating evidence-based HCPCS codes from {len(guidelines)} official guidelines")
+            
+            # Step 1: Extract procedures mentioned in official guidelines
+            official_procedures = await self._extract_procedures_from_guidelines(guidelines)
+            
+            if not official_procedures:
+                logger.warning("No procedures extracted from guidelines, falling back to problem statement")
+                return await self._get_hcpcs_codes(problem_statement)
+            
+            # Step 2: Use GPT to map procedures to HCPCS codes
+            mapped_codes = await self._map_procedures_to_hcpcs(official_procedures, problem_statement)
+            
+            # Step 3: Validate codes against CMS database
+            verified_codes = await self._validate_hcpcs_codes(mapped_codes)
+            
+            # Step 4: Return only verified codes
+            logger.info(f"Generated {len(verified_codes)} verified HCPCS codes from evidence-based approach")
+            return verified_codes[:10]  # Limit to top 10
+            
+        except Exception as e:
+            logger.error(f"Error in evidence-based code generation: {e}")
+            # Fallback to legacy method
+            return await self._get_hcpcs_codes(problem_statement)
+
+    async def _extract_procedures_from_guidelines(self, guidelines: List[Guidelines]) -> List[str]:
+        """Extract specific medical procedures from official guidelines"""
+        try:
+            procedures = []
+            
+            for guideline in guidelines:
+                if not guideline.content:
+                    continue
+                
+                # Use GPT to extract specific procedures from each guideline
+                system_prompt = (
+                    "Extract specific medical procedures, treatments, tests, or interventions "
+                    "mentioned in this medical guideline. Focus on billable medical activities. "
+                    "Return as a comma-separated list of procedures. "
+                    "Examples: 'blood glucose monitoring', 'cardiac catheterization', 'MRI scan'. "
+                    "Do not include general advice or non-procedural recommendations."
+                )
+                
+                user_prompt = f"Guideline Content: {guideline.content[:2000]}..."  # Limit content length
+                
+                response = await self.gpt_service._create_chat_completion(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=0.0
+                )
+                
+                # Parse and add procedures
+                guideline_procedures = [proc.strip() for proc in response.split(',') if proc.strip()]
+                procedures.extend(guideline_procedures)
+                
+                # Add delay to respect API limits
+                await asyncio.sleep(0.2)
+            
+            # Remove duplicates and return unique procedures
+            unique_procedures = list(set(procedures))
+            logger.info(f"Extracted {len(unique_procedures)} unique procedures from guidelines")
+            
+            return unique_procedures[:15]  # Limit to top 15 procedures
+            
+        except Exception as e:
+            logger.error(f"Error extracting procedures from guidelines: {e}")
+            return []
+
+    async def _map_procedures_to_hcpcs(self, procedures: List[str], problem_statement: str) -> List[str]:
+        """Map extracted procedures to specific HCPCS codes using medical knowledge"""
+        try:
+            hcpcs_codes = []
+            
+            # Create a comprehensive prompt with all procedures
+            procedures_text = "\n".join([f"- {proc}" for proc in procedures])
+            
+            system_prompt = (
+                "You are a medical billing expert with deep knowledge of HCPCS codes. "
+                "Given these medical procedures extracted from official guidelines, "
+                "provide the most appropriate HCPCS codes for billing purposes. "
+                "Focus on commonly used, valid HCPCS codes. "
+                "Return only the codes as a comma-separated list (e.g., 99213, 93000, J1100). "
+                "Do not include explanations or invalid codes."
+            )
+            
+            user_prompt = (
+                f"Medical Problem: {problem_statement}\n\n"
+                f"Procedures from Official Guidelines:\n{procedures_text}\n\n"
+                "Provide HCPCS codes for these procedures:"
+            )
+            
+            response = await self.gpt_service._create_chat_completion(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.0
+            )
+            
+            # Parse response
+            codes = [code.strip() for code in response.split(',') if code.strip()]
+            
+            # Basic validation (HCPCS codes are typically 5 characters)
+            valid_codes = []
+            for code in codes:
+                # Remove any extra characters and validate format
+                clean_code = ''.join(c for c in code if c.isalnum()).upper()
+                if len(clean_code) >= 4 and len(clean_code) <= 6:  # HCPCS codes are 4-6 chars
+                    valid_codes.append(clean_code)
+            
+            logger.info(f"Mapped {len(procedures)} procedures to {len(valid_codes)} HCPCS codes")
+            return valid_codes
+            
+        except Exception as e:
+            logger.error(f"Error mapping procedures to HCPCS codes: {e}")
+            return []
+
+    async def _validate_hcpcs_codes(self, codes: List[str]) -> List[str]:
+        """Validate HCPCS codes against CMS database to ensure they exist"""
+        try:
+            verified_codes = []
+            
+            for code in codes:
+                try:
+                    # Check if code exists in our local database first
+                    existing_fee = self.db.query(FeeSchedule)\
+                        .filter(FeeSchedule.hcpcs_code == code)\
+                        .first()
+                    
+                    if existing_fee:
+                        verified_codes.append(code)
+                        logger.debug(f"Code {code} verified from local database")
+                        continue
+                    
+                    # Check against CMS API
+                    cms_result = await self._fetch_cms_fee(code)
+                    if cms_result and cms_result.get("fee", 0) > 0:
+                        verified_codes.append(code)
+                        logger.debug(f"Code {code} verified from CMS API")
+                    else:
+                        logger.debug(f"Code {code} not found in CMS database")
+                    
+                    # Add delay to respect API limits
+                    await asyncio.sleep(0.3)
+                    
+                except Exception as e:
+                    logger.error(f"Error validating code {code}: {e}")
+                    continue
+            
+            logger.info(f"Validated {len(verified_codes)} out of {len(codes)} HCPCS codes")
+            return verified_codes
+            
+        except Exception as e:
+            logger.error(f"Error validating HCPCS codes: {e}")
+            # Return original codes if validation fails
+            return codes
 
     async def _fetch_cms_fee(self, code: str) -> Dict:
         """Fetch fee data from CMS API for non-dental codes"""
@@ -338,7 +498,7 @@ class MedicalAssessmentService:
         guidelines: str,
         problem_statement: str
     ) -> Tuple[List[str], str]:
-        """Extract billable procedures and HCPCS codes"""
+        """Extract billable procedures and HCPCS codes (legacy text-based method)"""
         system_prompt = (
             "Based on these treatment guidelines, what billable activities/procedures "
             "would a medical professional prescribe? Answer in how a medical professional would communicate to their billing people. " 
@@ -349,10 +509,78 @@ class MedicalAssessmentService:
             user_prompt=f"Guidelines: {guidelines}\nProblem: {problem_statement}"
         )
 
-        # Extract HCPCS codes
+        # Extract HCPCS codes using legacy method
         codes = await self._get_hcpcs_codes(recommendations)
         
         return codes, recommendations
+
+    async def extract_procedures_from_guidelines(
+        self,
+        guidelines_list: List[Guidelines],
+        problem_statement: str
+    ) -> Tuple[List[str], str]:
+        """
+        Extract billable procedures and HCPCS codes using evidence-based approach
+        This replaces the legacy text-based method with official source validation
+        """
+        try:
+            logger.info("Using evidence-based procedure extraction from official guidelines")
+            
+            # Generate evidence-based HCPCS codes
+            codes = await self._get_evidence_based_codes(guidelines_list, problem_statement)
+            
+            # Generate recommendations summary from guidelines
+            recommendations = await self._generate_recommendations_summary(guidelines_list, problem_statement)
+            
+            logger.info(f"Evidence-based extraction completed: {len(codes)} codes, recommendations generated")
+            return codes, recommendations
+            
+        except Exception as e:
+            logger.error(f"Error in evidence-based procedure extraction: {e}")
+            # Fallback to legacy method
+            all_guidelines_text = "\n\n".join(
+                g.content for g in guidelines_list[:3] 
+                if g.content is not None
+            )
+            return await self.extract_procedures(all_guidelines_text, problem_statement)
+
+    async def _generate_recommendations_summary(self, guidelines_list: List[Guidelines], problem_statement: str) -> str:
+        """Generate a comprehensive recommendations summary from official guidelines"""
+        try:
+            # Prepare guidelines content
+            guidelines_content = []
+            for i, guideline in enumerate(guidelines_list[:3], 1):
+                if guideline.content:
+                    source_info = f"Source {i} ({guideline.source}): {guideline.title}"
+                    content_snippet = guideline.content[:800]  # Limit length
+                    guidelines_content.append(f"{source_info}\n{content_snippet}")
+            
+            combined_content = "\n\n---\n\n".join(guidelines_content)
+            
+            system_prompt = (
+                "Based on these official medical guidelines, provide clear medical recommendations "
+                "for billing and treatment purposes. Focus on specific, actionable procedures and treatments. "
+                "Write as a medical professional would communicate to billing staff. "
+                "Be concise but comprehensive. Do not include general advice."
+            )
+            
+            user_prompt = (
+                f"Medical Problem: {problem_statement}\n\n"
+                f"Official Guidelines:\n{combined_content}\n\n"
+                "Provide specific medical recommendations for billing purposes:"
+            )
+            
+            recommendations = await self.gpt_service._create_chat_completion(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.1
+            )
+            
+            return recommendations
+            
+        except Exception as e:
+            logger.error(f"Error generating recommendations summary: {e}")
+            return "Unable to generate recommendations from guidelines"
 
     async def create_medical_assessment(
         self,
@@ -360,12 +588,15 @@ class MedicalAssessmentService:
         problem_statement: str,
         technology_name: str
     ) -> MedicalAssessment:
-        """Create complete medical assessment"""
+        """Create complete medical assessment using evidence-based approach"""
         try:
+            logger.info(f"Starting evidence-based assessment for: {technology_name}")
+            
             # Step 1: Classify medical association
             medical_association = await self.classify_medical_association(problem_statement)
             
             if medical_association == "No medical associations found":
+                logger.warning("No medical associations found")
                 return None
 
             # Create assessment record
@@ -374,38 +605,50 @@ class MedicalAssessmentService:
                 medical_association=medical_association
             )
             self.db.add(assessment)
-            self.db.flush()  # Get ID without committing
+            await self.db.flush()  # Get ID without committing
 
-            # Step 2: Get guidelines from official sources (PubMed + CMS)
+            # Step 2: Get comprehensive guidelines from official sources
             guidelines_list = await self.get_medical_guidelines_from_official_sources(
-                medical_association,
-                technology_name,
-                problem_statement
+                problem_statement,
+                limit=5
             )
-            print(f"Guidelines found: {len(guidelines_list)}")
-            # Add guidelines to assessment
+            
+            logger.info(f"Found {len(guidelines_list)} guidelines from official sources")
+            
+            # Add guidelines to assessment with source attribution
             for guideline in guidelines_list:
                 guideline.assessment_id = assessment.id
                 self.db.add(guideline)
             
-            # Step 3: Extract procedures from top guidelines
-            all_guidelines_text = "\n\n".join(
-                g.content for g in guidelines_list[:3] 
-                if g.content is not None
-            )
-            print(f"Extracting procedures from guidelines: {all_guidelines_text[:100]}...")  # Log first 100 chars
-            codes, recommendations = await self.extract_procedures(
-                all_guidelines_text, 
-                problem_statement
-            )
+            # Step 3: Use evidence-based procedure extraction
+            if guidelines_list:
+                codes, recommendations = await self.extract_procedures_from_guidelines(
+                    guidelines_list, 
+                    problem_statement
+                )
+                logger.info(f"Evidence-based extraction: {len(codes)} codes found")
+            else:
+                # Fallback to legacy method if no official guidelines
+                logger.warning("No official guidelines found, using fallback method")
+                fallback_guidelines = await self.get_medical_guidelines(
+                    medical_association, technology_name, problem_statement
+                )
+                all_guidelines_text = "\n\n".join(
+                    g.content for g in fallback_guidelines[:3] 
+                    if g.content is not None
+                )
+                codes, recommendations = await self.extract_procedures(
+                    all_guidelines_text, 
+                    problem_statement
+                )
 
-            # Update assessment with recommendations
+            # Update assessment with evidence-based recommendations
             assessment.recommendations = recommendations
 
-            # Step 4: Calculate fees
+            # Step 4: Calculate fees using validated codes
             fee_schedule = await self.calculate_fee_schedule(codes)
 
-            # Add billable items
+            # Add billable items with enhanced tracking
             for item in fee_schedule:
                 billable_item = BillableItem(
                     assessment_id=assessment.id,
@@ -415,10 +658,16 @@ class MedicalAssessmentService:
                 )
                 self.db.add(billable_item)
 
-            self.db.commit()
-            self.db.refresh(assessment)
+            await self.db.commit()
+            await self.db.refresh(assessment)
             
+            logger.info(f"Evidence-based assessment completed for ID: {assessment.id}")
             return assessment
+
+        except Exception as e:
+            logger.error(f"Error in evidence-based medical assessment: {e}")
+            await self.db.rollback()
+            raise
 
         except Exception as e:
             logger.error(f"Error in medical assessment: {e}")
