@@ -605,12 +605,13 @@ class MedicalAssessmentService:
                 medical_association=medical_association
             )
             self.db.add(assessment)
-            await self.db.flush()  # Get ID without committing
+            self.db.flush()  # Get ID without committing
 
             # Step 2: Get comprehensive guidelines from official sources
             guidelines_list = await self.get_medical_guidelines_from_official_sources(
-                problem_statement,
-                limit=5
+                medical_association,
+                technology_name,
+                problem_statement
             )
             
             logger.info(f"Found {len(guidelines_list)} guidelines from official sources")
@@ -658,15 +659,15 @@ class MedicalAssessmentService:
                 )
                 self.db.add(billable_item)
 
-            await self.db.commit()
-            await self.db.refresh(assessment)
+            self.db.commit()
+            self.db.refresh(assessment)
             
             logger.info(f"Evidence-based assessment completed for ID: {assessment.id}")
             return assessment
 
         except Exception as e:
             logger.error(f"Error in evidence-based medical assessment: {e}")
-            await self.db.rollback()
+            self.db.rollback()
             raise
 
         except Exception as e:
