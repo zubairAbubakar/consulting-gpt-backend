@@ -233,6 +233,7 @@ class Guidelines(Base):
     link = Column(String(1000))
     relevance_score = Column(Float)
     content = Column(Text, nullable=True)
+    source = Column(String(100), nullable=True)  # Track source: PubMed, CMS, FDA, etc.
 
     # Relationships
     medical_assessment = relationship("MedicalAssessment", back_populates="guidelines")
